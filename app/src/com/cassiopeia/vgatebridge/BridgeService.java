@@ -254,29 +254,18 @@ public class BridgeService extends Service {
         @Override
         public void run() {
             while (running) {
+                // Fase 1: conexión BT PERSISTENTE (se mantiene entre clientes TCP)
                 if (!connectBluetooth()) {
-                    log("Reintentando en 10 segundos...");
-                    broadcastStatus(STATUS_WAITING, "Reintentando en 10s...");
+                    log("BT no disponible, reintentando en 10s...");
+                    broadcastStatus(STATUS_WAITING, "Reintentando BT en 10s...");
                     sleep(10000);
                     continue;
                 }
 
-                if (!startTcpServer()) {
-                    closeSilently(btSocket);
-                    // Liberar SIEMPRE el puerto en el camino de fallo:
-                    // si startTcpServer() falló (p.ej. timeout de accept()),
-                    // el serverSocket puede quedar vivo con el puerto ocupado
-                    closeSilently(serverSocket);
-                    serverSocket = null;
-                    log("Reintentando en 5 segundos...");
-                    sleep(5000);
-                    continue;
-                }
+                // Fase 2: servir clientes TCP con el MISMO BT (no se recicla por cliente)
+                boolean btSano = serveClients();
 
-                // Bridge loop
-                bridgeLoop();
-
-                // Cleanup for reconnect
+                // Limpieza tras caída del BT o del server
                 closeSilently(btSocket);
                 closeSilently(tcpSocket);
                 closeSilently(serverSocket);
@@ -284,9 +273,14 @@ public class BridgeService extends Service {
                 tcpSocket = null;
                 serverSocket = null;
 
-                log("Puente cerrado, esperando 10s para reconectar...");
-                broadcastStatus(STATUS_WAITING, "Reconectando en 10s...");
-                sleep(10000);
+                if (btSano) {
+                    log("Server TCP reiniciado, reconectando BT en 5s...");
+                    broadcastStatus(STATUS_WAITING, "Reiniciando puente en 5s...");
+                } else {
+                    log("Conexión BT perdida, reconectando en 5s...");
+                    broadcastStatus(STATUS_WAITING, "Reconectando BT en 5s...");
+                }
+                sleep(5000);
             }
 
             log("Puente finalizado");
@@ -351,11 +345,14 @@ public class BridgeService extends Service {
             }
         }
 
-        private boolean startTcpServer() {
+        /**
+         * Servidor TCP persistente: acepta clientes en bucle usando el MISMO
+         * Bluetooth. Solo devuelve false (y cierra) si el BT se cae o el server
+         * falla; la desconexión de un cliente NO recicla el BT (v7).
+         */
+        private boolean serveClients() {
             try {
-                // Defensa: cerrar cualquier serverSocket previo que pudiera quedar vivo.
-                // Sin esto, un accept() con timeout (5 min) deja el puerto ocupado
-                // y el siguiente bind falla con EADDRINUSE para siempre.
+                // Defensa: cerrar cualquier serverSocket previo que pudiera quedar vivo
                 closeSilently(serverSocket);
                 serverSocket = null;
 
@@ -363,12 +360,32 @@ public class BridgeService extends Service {
                 log("Servidor TCP en puerto " + TCP_PORT + " - esperando cliente...");
                 broadcastStatus(STATUS_WAITING, "Esperando cliente TCP en :" + TCP_PORT);
 
-                serverSocket.setSoTimeout(300000); // 5 min timeout
-                tcpSocket = serverSocket.accept();
-                tcpSocket.setSoTimeout(5000); // 5s timeout for read detection
-                log("Cliente TCP conectado: " + tcpSocket.getInetAddress().getHostAddress());
-                return true;
+                while (running) {
+                    // Sin timeout: el BT ya está conectado, esperamos clientes indefinidamente
+                    Socket client = serverSocket.accept();
+                    client.setSoTimeout(5000);
+                    tcpSocket = client; // para stopBridge
+                    log("Cliente TCP conectado: " + client.getInetAddress().getHostAddress());
 
+                    boolean btAlive = bridgeLoop(client);
+                    closeSilently(client);
+                    tcpSocket = null;
+
+                    if (!btAlive) {
+                        log("BT caído durante cliente, reciclando puente...");
+                        closeSilently(serverSocket);
+                        serverSocket = null;
+                        return false;
+                    }
+
+                    // BT sigue sano → siguiente cliente SIN reconectar BT
+                    log("Cliente desconectado, esperando siguiente...");
+                    broadcastStatus(STATUS_WAITING, "Esperando cliente TCP en :" + TCP_PORT);
+                }
+
+                closeSilently(serverSocket);
+                serverSocket = null;
+                return true;
             } catch (Exception e) {
                 log("Error TCP server: " + e.getMessage());
                 // Liberar el puerto aunque el bind/accept haya fallado a medias
@@ -378,15 +395,20 @@ public class BridgeService extends Service {
             }
         }
 
-        private void bridgeLoop() {
+        /**
+         * Puente BT↔TCP para un cliente. Devuelve true si el BT sigue sano
+         * tras atender al cliente; false si el BT se cayó (hay que reconectar).
+         */
+        private boolean bridgeLoop(final Socket client) {
+            final boolean[] btDead = {false};
             try {
                 final InputStream btIn = btSocket.getInputStream();
                 final OutputStream btOut = btSocket.getOutputStream();
-                final InputStream tcpIn = tcpSocket.getInputStream();
-                final OutputStream tcpOut = tcpSocket.getOutputStream();
+                final InputStream tcpIn = client.getInputStream();
+                final OutputStream tcpOut = client.getOutputStream();
 
                 // Set read timeout on TCP socket so blocking reads detect disconnects
-                try { tcpSocket.setSoTimeout(5000); } catch (Exception e) {}
+                try { client.setSoTimeout(5000); } catch (Exception e) {}
 
                 // Initialize ELM327
                 btOut.write("ATZ\r\n".getBytes()); btOut.flush(); sleep(1500);
@@ -414,7 +436,10 @@ public class BridgeService extends Service {
                                 }
                             }
                         } catch (Exception e) {
-                            if (running) log("BT->TCP error: " + e.getMessage());
+                            if (running && !Thread.currentThread().isInterrupted()) {
+                                btDead[0] = true;
+                                log("BT->TCP error: " + e.getMessage());
+                            }
                         }
                     }
                 });
@@ -445,17 +470,20 @@ public class BridgeService extends Service {
                 btToTcp.start();
                 tcpToBt.start();
 
-                // Monitor: wait for either thread to die (means disconnect)
+                // Monitor: wait for either thread to die (client gone or BT down)
                 while (running && btToTcp.isAlive() && tcpToBt.isAlive()) {
                     sleep(2000);
                 }
 
-                log("Puente desconectado");
                 btToTcp.interrupt();
                 tcpToBt.interrupt();
 
+                log("Puente desconectado");
+                return !btDead[0];
+
             } catch (Exception e) {
                 log("Error en puente: " + e.getMessage());
+                return false;
             }
         }
 
