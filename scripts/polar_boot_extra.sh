@@ -58,3 +58,18 @@ start_watchdog
 if command -v tailscale > /dev/null 2>&1; then
     tailscale up 2>/dev/null
 fi
+
+# 7. VgateBridge — reactivar si el TCP 22000 no responde (sin abrir UI).
+#    Requiere BridgeService exported=true (v6). Si el puerto responde, no hace nada.
+#    Si el proceso de la app murió (ROM/LMKD), crond lo revive en ≤1 min.
+if ! python3 -c "
+import socket
+try:
+    s = socket.create_connection(('127.0.0.1', 22000), timeout=2)
+    s.close()
+except Exception:
+    exit(1)
+" 2>/dev/null; then
+    am startservice -n com.cassiopeia.vgatebridge/.BridgeService \
+        -a com.cassiopeia.vgatebridge.START >/dev/null 2>&1
+fi
