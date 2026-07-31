@@ -263,6 +263,11 @@ public class BridgeService extends Service {
 
                 if (!startTcpServer()) {
                     closeSilently(btSocket);
+                    // Liberar SIEMPRE el puerto en el camino de fallo:
+                    // si startTcpServer() falló (p.ej. timeout de accept()),
+                    // el serverSocket puede quedar vivo con el puerto ocupado
+                    closeSilently(serverSocket);
+                    serverSocket = null;
                     log("Reintentando en 5 segundos...");
                     sleep(5000);
                     continue;
@@ -322,16 +327,20 @@ public class BridgeService extends Service {
                 String devName = device.getName();
                 log("Conectando a " + (devName != null ? devName : mac));
 
+                // Cancel discovery BEFORE creating socket (critical in some ROMs)
+                adapter.cancelDiscovery();
+
+                // Try reflection-based channel 1 first (works better on Chinese ROMs)
                 try {
-                    btSocket = device.createRfcommSocketToServiceRecord(SPP_UUID);
-                } catch (Exception e) {
-                    log("RFCOMM UUID fallo, probando channel 1");
                     java.lang.reflect.Method m = device.getClass().getMethod(
                         "createRfcommSocket", int.class);
                     btSocket = (BluetoothSocket) m.invoke(device, 1);
+                    log("Socket creado por reflection (channel 1)");
+                } catch (Exception e) {
+                    log("Reflection fallo, probando UUID SPP: " + e.getMessage());
+                    btSocket = device.createRfcommSocketToServiceRecord(SPP_UUID);
                 }
 
-                adapter.cancelDiscovery();
                 btSocket.connect();
                 log("Bluetooth conectado!");
                 return true;
@@ -344,28 +353,40 @@ public class BridgeService extends Service {
 
         private boolean startTcpServer() {
             try {
+                // Defensa: cerrar cualquier serverSocket previo que pudiera quedar vivo.
+                // Sin esto, un accept() con timeout (5 min) deja el puerto ocupado
+                // y el siguiente bind falla con EADDRINUSE para siempre.
+                closeSilently(serverSocket);
+                serverSocket = null;
+
                 serverSocket = new ServerSocket(TCP_PORT);
                 log("Servidor TCP en puerto " + TCP_PORT + " - esperando cliente...");
                 broadcastStatus(STATUS_WAITING, "Esperando cliente TCP en :" + TCP_PORT);
 
                 serverSocket.setSoTimeout(300000); // 5 min timeout
                 tcpSocket = serverSocket.accept();
-                tcpSocket.setSoTimeout(0);
+                tcpSocket.setSoTimeout(5000); // 5s timeout for read detection
                 log("Cliente TCP conectado: " + tcpSocket.getInetAddress().getHostAddress());
                 return true;
 
             } catch (Exception e) {
                 log("Error TCP server: " + e.getMessage());
+                // Liberar el puerto aunque el bind/accept haya fallado a medias
+                closeSilently(serverSocket);
+                serverSocket = null;
                 return false;
             }
         }
 
         private void bridgeLoop() {
             try {
-                InputStream btIn = btSocket.getInputStream();
-                OutputStream btOut = btSocket.getOutputStream();
-                InputStream tcpIn = tcpSocket.getInputStream();
-                OutputStream tcpOut = tcpSocket.getOutputStream();
+                final InputStream btIn = btSocket.getInputStream();
+                final OutputStream btOut = btSocket.getOutputStream();
+                final InputStream tcpIn = tcpSocket.getInputStream();
+                final OutputStream tcpOut = tcpSocket.getOutputStream();
+
+                // Set read timeout on TCP socket so blocking reads detect disconnects
+                try { tcpSocket.setSoTimeout(5000); } catch (Exception e) {}
 
                 // Initialize ELM327
                 btOut.write("ATZ\r\n".getBytes()); btOut.flush(); sleep(1500);
@@ -376,22 +397,17 @@ public class BridgeService extends Service {
                 log("ELM327 inicializado");
                 broadcastStatus(STATUS_CONNECTED, "Puente activo en :" + TCP_PORT);
 
-                final InputStream fBtIn = btIn;
-                final OutputStream fBtOut = btOut;
-                final InputStream fTcpIn = tcpIn;
-                final OutputStream fTcpOut = tcpOut;
-
                 Thread btToTcp = new Thread(new Runnable() {
                     @Override
                     public void run() {
                         byte[] buf = new byte[4096];
                         try {
                             while (running) {
-                                if (fBtIn.available() > 0) {
-                                    int n = fBtIn.read(buf);
+                                if (btIn.available() > 0) {
+                                    int n = btIn.read(buf);
                                     if (n > 0) {
-                                        fTcpOut.write(buf, 0, n);
-                                        fTcpOut.flush();
+                                        tcpOut.write(buf, 0, n);
+                                        tcpOut.flush();
                                     } else if (n == -1) break;
                                 } else {
                                     sleep(50);
@@ -409,15 +425,16 @@ public class BridgeService extends Service {
                         byte[] buf = new byte[4096];
                         try {
                             while (running) {
-                                if (fTcpIn.available() > 0) {
-                                    int n = fTcpIn.read(buf);
-                                    if (n > 0) {
-                                        fBtOut.write(buf, 0, n);
-                                        fBtOut.flush();
-                                    } else if (n == -1) break;
-                                } else {
-                                    sleep(50);
+                                int n;
+                                try {
+                                    n = tcpIn.read(buf);
+                                } catch (java.net.SocketTimeoutException e) {
+                                    continue; // timeout, no data yet
                                 }
+                                if (n > 0) {
+                                    btOut.write(buf, 0, n);
+                                    btOut.flush();
+                                } else if (n == -1) break;
                             }
                         } catch (Exception e) {
                             if (running) log("TCP->BT error: " + e.getMessage());
@@ -428,15 +445,8 @@ public class BridgeService extends Service {
                 btToTcp.start();
                 tcpToBt.start();
 
-                // Monitor connection health
-                while (running && btSocket.isConnected() && tcpSocket.isConnected()) {
-                    // Test if BT socket is alive
-                    try {
-                        btIn.available();
-                    } catch (Exception e) {
-                        log("BT socket cerrado: " + e.getMessage());
-                        break;
-                    }
+                // Monitor: wait for either thread to die (means disconnect)
+                while (running && btToTcp.isAlive() && tcpToBt.isAlive()) {
                     sleep(2000);
                 }
 
@@ -452,6 +462,16 @@ public class BridgeService extends Service {
         private void sleep(int ms) {
             try { Thread.sleep(ms); } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
+            }
+        }
+
+        private boolean isAlive(InputStream in) {
+            try {
+                // Non-destructive test: if available() throws, socket is dead
+                in.available();
+                return true;
+            } catch (Exception e) {
+                return false;
             }
         }
     }
