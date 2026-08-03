@@ -40,18 +40,22 @@ public class BootReceiver extends BroadcastReceiver {
     }
 
     /**
-     * Lanza los servicios de Termux (sshd, GPS logger, watchdog) via RUN_COMMAND.
-     * Requiere allow-external-apps=true en ~/.termux/termux.properties.
-     * Si falla (Termux ausente o sin permiso), no rompe nada: el bridge sigue.
+     * Lanza los servicios de Termux (sshd, GPS logger, watchdog, recolector
+     * OBD) via WakeService → RUN_COMMAND.
+     *
+     * Android 8+ bloquea startService() de RunCommandService desde un receiver
+     * en background (IllegalStateException). WakeService se lanza con
+     * startForegroundService (igual que BridgeService, que sí funciona) y,
+     * ya en primer plano, ejecuta el RUN_COMMAND legalmente.
      */
     private void startTermuxServices(Context context) {
         try {
-            Intent i = new Intent("com.termux.RUN_COMMAND");
-            i.setClassName("com.termux", "com.termux.app.RunCommandService");
-            i.putExtra("com.termux.RUN_COMMAND_PATH",
-                    "/data/data/com.termux/files/home/polar_boot_extra.sh");
-            i.putExtra("com.termux.RUN_COMMAND_BACKGROUND", true);
-            context.startService(i);
+            Intent serviceIntent = new Intent(context, WakeService.class);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                context.startForegroundService(serviceIntent);
+            } else {
+                context.startService(serviceIntent);
+            }
         } catch (Exception e) {
             // Ignorar: no debe impedir el arranque del bridge
         }

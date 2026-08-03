@@ -23,19 +23,41 @@ import android.widget.TextView;
 import java.util.ArrayList;
 import java.util.Set;
 
+/**
+ * MainActivity — v9.1 "modo coche" con interruptor manual.
+ *
+ * - AUTO COCHE OFF (por defecto al instalar): UI normal. El usuario pulsa
+ *   INICIAR para arrancar el bridge, como siempre.
+ * - AUTO COCHE ON (botón en la UI, estado persistente): al abrirse la app
+ *   (lanzada por la ROM del vehículo o manualmente) arranca en silencio:
+ *     1. BridgeService (BT->TCP) + WakeService (Termux)
+ *     2. 2.5s de gracia: si el usuario toca la pantalla, se cancela todo y
+ *        se queda en la UI (puede ver logs, detener, configurar).
+ *     3. Si nadie toca: vuelve al launcher del coche.
+ *     4. Lanza Tailscale (su IPNService no es exportado; única vía es su
+ *        MainActivity) para conectar la VPN.
+ *     5. Vuelve al launcher del coche.
+ */
 public class MainActivity extends Activity {
     private TextView statusText;
     private TextView selectedLabel;
     private ListView deviceList;
+    private Button carModeBtn;
     private Handler handler;
     private SharedPreferences prefs;
     private String selectedMac = null;
     private String selectedName = null;
     private boolean serviceRunning = false;
+    private boolean autoReturnScheduled = false;
+    private boolean carMode = false;
 
     private static final String PREFS_NAME = "VgatePrefs";
     private static final String KEY_MAC = "vgate_mac";
     private static final String KEY_NAME = "vgate_name";
+    private static final String KEY_CAR_MODE = "car_mode";
+
+    // Ventana para que el usuario cancele el arranque automático tocando la pantalla
+    private static final long USER_GRACE_MS = 2500;
 
     private final BroadcastReceiver serviceReceiver = new BroadcastReceiver() {
         @Override
@@ -54,6 +76,16 @@ public class MainActivity extends Activity {
         }
     };
 
+    private final Runnable carModeSequence = new Runnable() {
+        @Override
+        public void run() {
+            // Ventana de gracia terminada sin interacción: volver al launcher.
+            // Termux y Tailscale los gestiona WakeService (espera de red incluida).
+            autoReturnScheduled = false;
+            goHome();
+        }
+    };
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -62,24 +94,115 @@ public class MainActivity extends Activity {
 
         selectedMac = prefs.getString(KEY_MAC, null);
         selectedName = prefs.getString(KEY_NAME, null);
+        carMode = prefs.getBoolean(KEY_CAR_MODE, false);
 
         // Register broadcast receiver for service logs
         registerReceiver(serviceReceiver, new IntentFilter(BridgeService.ACTION_STATUS));
 
         buildUI();
 
-        // Auto-start from boot
-        boolean autoStart = getIntent().getBooleanExtra("auto_start", false);
-        if (autoStart && selectedMac != null) {
-            appendLog("Auto-arranque desde boot...");
-            handler.postDelayed(new Runnable() {
-                @Override
-                public void run() { startService(); }
-            }, 8000);
+        // Modo coche: si está activado y hay Vgate configurado, arranque
+        // silencioso del stack con ventana de cancelación por toque.
+        if (carMode && selectedMac != null) {
+            carLaunchMode();
         }
 
         // Request battery optimization exclusion
         requestBatteryExclusion();
+    }
+
+    /**
+     * Arranque de la tablet como app del vehículo: dispara bridge y Termux,
+     * da una ventana de gracia al usuario, y si nadie toca la pantalla vuelve
+     * al launcher y lanza Tailscale.
+     */
+    private void carLaunchMode() {
+        appendLog("AUTO COCHE: arrancando stack...");
+
+        // 1. Bridge BT->TCP (foreground service, idempotente)
+        try {
+            Intent intent = new Intent(this, BridgeService.class);
+            intent.setAction(BridgeService.ACTION_START);
+            intent.putExtra("mac", selectedMac);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                startForegroundService(intent);
+            } else {
+                startService(intent);
+            }
+            appendLog("BridgeService lanzado");
+        } catch (Exception e) {
+            appendLog("Error BridgeService: " + e.getMessage());
+        }
+
+        // 2. WakeService -> RUN_COMMAND -> polar_boot_extra.sh (Termux:
+        //    sshd, crond, GPS logger, recolector OBD local)
+        try {
+            Intent wake = new Intent(this, WakeService.class);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                startForegroundService(wake);
+            } else {
+                startService(wake);
+            }
+            appendLog("WakeService lanzado (Termux)");
+        } catch (Exception e) {
+            appendLog("Error WakeService: " + e.getMessage());
+        }
+
+        // 3. Ventana de gracia: si el usuario toca, onUserInteraction cancela.
+        autoReturnScheduled = true;
+        handler.postDelayed(carModeSequence, USER_GRACE_MS);
+    }
+
+    /** Vuelve al launcher del vehículo sin matar nada (todo queda en background). */
+    private void goHome() {
+        try {
+            Intent home = new Intent(Intent.ACTION_MAIN);
+            home.addCategory(Intent.CATEGORY_HOME);
+            home.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            startActivity(home);
+        } catch (Exception e) {
+            // Si falla, intentar moveTaskToBack como alternativa
+            try {
+                moveTaskToBack(true);
+            } catch (Exception e2) {
+                // Nada más que hacer
+            }
+        }
+    }
+
+    /** Cualquier interacción del usuario cancela el auto-arranque. */
+    @Override
+    public void onUserInteraction() {
+        super.onUserInteraction();
+        if (autoReturnScheduled) {
+            autoReturnScheduled = false;
+            handler.removeCallbacks(carModeSequence);
+            appendLog("Interacción detectada: modo coche cancelado");
+        }
+    }
+
+    /** Alterna el modo coche (estado persistente). */
+    private void toggleCarMode() {
+        carMode = !carMode;
+        prefs.edit().putBoolean(KEY_CAR_MODE, carMode).apply();
+        updateCarModeButton();
+        if (carMode) {
+            appendLog("AUTO COCHE ACTIVADO: al abrir la app arrancará todo en silencio");
+        } else {
+            appendLog("AUTO COCHE DESACTIVADO: uso manual normal");
+        }
+    }
+
+    private void updateCarModeButton() {
+        if (carModeBtn != null) {
+            if (carMode) {
+                carModeBtn.setText("AUTO COCHE: ON");
+                carModeBtn.setBackgroundColor(0xFF006600);
+            } else {
+                carModeBtn.setText("AUTO COCHE: OFF");
+                carModeBtn.setBackgroundColor(0xFF333355);
+            }
+        }
     }
 
     @Override
@@ -98,7 +221,7 @@ public class MainActivity extends Activity {
 
         // Title
         TextView title = new TextView(this);
-        title.setText("VGATE BRIDGE v3");
+        title.setText("VGATE BRIDGE v4.2");
         title.setTextSize(20);
         title.setTextColor(0xFF00FF00);
         title.setPadding(10, 10, 10, 20);
@@ -148,7 +271,7 @@ public class MainActivity extends Activity {
             }
         });
 
-        // Buttons row
+        // Buttons row 1
         LinearLayout btnRow1 = new LinearLayout(this);
         btnRow1.setOrientation(LinearLayout.HORIZONTAL);
         btnRow1.setPadding(0, 10, 0, 5);
@@ -184,6 +307,21 @@ public class MainActivity extends Activity {
         btnRow1.addView(stopBtn);
 
         layout.addView(btnRow1);
+
+        // Buttons row 2: modo coche
+        LinearLayout btnRow2 = new LinearLayout(this);
+        btnRow2.setOrientation(LinearLayout.HORIZONTAL);
+        btnRow2.setPadding(0, 0, 0, 5);
+
+        carModeBtn = new Button(this);
+        carModeBtn.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) { toggleCarMode(); }
+        });
+        updateCarModeButton();
+        btnRow2.addView(carModeBtn);
+
+        layout.addView(btnRow2);
 
         // Log area
         TextView logLabel = new TextView(this);

@@ -54,22 +54,38 @@ start_watchdog
 sleep 2
 start_watchdog
 
-# 6. Tailscale (si el binario existe)
-if command -v tailscale > /dev/null 2>&1; then
-    tailscale up 2>/dev/null
-fi
+# 6. Tailscale — refuerzo del WakeService.
+#    El WakeService (VgateBridge v9.2) espera red y abre Tailscale cuando hay
+#    conectividad. Este refuerzo cubre el caso de que la ROM mate el proceso
+#    de la app durante la espera: si hay red pero la VPN no responde, relanza
+#    Tailscale (con anti-spam de 3 min para no abrir la UI cada minuto).
+TS_FLAG=~/.tailscale_retry_ts
+TS_PEER=100.103.35.125   # Cassiopeia — si responde, la VPN Tailscale está up
+TS_INTERNET=1.1.1.1      # referencia de conectividad general
 
-# 7. VgateBridge — reactivar si el TCP 22000 no responde (sin abrir UI).
-#    Requiere BridgeService exported=true (v6). Si el puerto responde, no hace nada.
-#    Si el proceso de la app murió (ROM/LMKD), crond lo revive en ≤1 min.
-if ! python3 -c "
-import socket
-try:
-    s = socket.create_connection(('127.0.0.1', 22000), timeout=2)
-    s.close()
-except Exception:
-    exit(1)
-" 2>/dev/null; then
-    am startservice -n com.cassiopeia.vgatebridge/.BridgeService \
-        -a com.cassiopeia.vgatebridge.START >/dev/null 2>&1
+tailscale_connected() {
+    ping -c 1 -W 2 $TS_PEER >/dev/null 2>&1
+}
+
+has_internet() {
+    ping -c 1 -W 3 $TS_INTERNET >/dev/null 2>&1
+}
+
+if ! tailscale_connected; then
+    if has_internet; then
+        # Hay red pero Tailscale no conecta: relanzar (máx 1 vez cada 3 min)
+        now=$(date +%s)
+        last=0
+        [ -f "$TS_FLAG" ] && last=$(cat "$TS_FLAG" 2>/dev/null || echo 0)
+        if [ $((now - last)) -ge 180 ]; then
+            echo "$now" > "$TS_FLAG"
+            am start -n com.tailscale.ipn/.MainActivity >/dev/null 2>&1
+            sleep 4
+            # Volver al launcher del coche (no robar foco)
+            am start -a android.intent.action.MAIN -c android.intent.category.HOME >/dev/null 2>&1
+        fi
+    fi
+else
+    # VPN OK: limpiar flag
+    rm -f "$TS_FLAG"
 fi
