@@ -238,7 +238,7 @@ public class BridgeService extends Service {
         private volatile boolean running = true;
         private BluetoothSocket btSocket;
         private ServerSocket serverSocket;
-        private Socket tcpSocket;
+        private volatile Socket tcpSocket;
 
         BridgeThread(String mac) {
             this.mac = mac;
@@ -400,7 +400,7 @@ public class BridgeService extends Service {
          * tras atender al cliente; false si el BT se cayó (hay que reconectar).
          */
         private boolean bridgeLoop(final Socket client) {
-            final boolean[] btDead = {false};
+            final java.util.concurrent.atomic.AtomicBoolean btDead = new java.util.concurrent.atomic.AtomicBoolean(false);
             try {
                 final InputStream btIn = btSocket.getInputStream();
                 final OutputStream btOut = btSocket.getOutputStream();
@@ -437,7 +437,7 @@ public class BridgeService extends Service {
                             }
                         } catch (Exception e) {
                             if (running && !Thread.currentThread().isInterrupted()) {
-                                btDead[0] = true;
+                                btDead.set(true);
                                 log("BT->TCP error: " + e.getMessage());
                             }
                         }
@@ -479,7 +479,7 @@ public class BridgeService extends Service {
                 tcpToBt.interrupt();
 
                 log("Puente desconectado");
-                return !btDead[0];
+                return !btDead.get();
 
             } catch (Exception e) {
                 log("Error en puente: " + e.getMessage());
