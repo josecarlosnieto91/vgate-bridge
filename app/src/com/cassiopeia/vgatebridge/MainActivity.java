@@ -56,6 +56,10 @@ public class MainActivity extends Activity {
     private static final String KEY_NAME = "vgate_name";
     private static final String KEY_CAR_MODE = "car_mode";
 
+    // Extra para que WakeService (y scripts) pidan "volver a la app anterior"
+    // en vez de abrir el launcher: MainActivity hace moveTaskToBack.
+    public static final String EXTRA_GO_BACK = "go_back";
+
     // Ventana para que el usuario cancele el arranque automático tocando la pantalla
     private static final long USER_GRACE_MS = 2500;
 
@@ -153,20 +157,34 @@ public class MainActivity extends Activity {
         handler.postDelayed(carModeSequence, USER_GRACE_MS);
     }
 
-    /** Vuelve al launcher del vehículo sin matar nada (todo queda en background). */
+    /** Vuelve a la app anterior sin matar nada (moveTaskToBack revela la tarea
+     *  anterior: Maps, Spotify, launcher... lo que hubiera debajo). Solo si
+     *  falla, cae al launcher del vehículo. */
     private void goHome() {
+        try {
+            moveTaskToBack(true);
+            return;
+        } catch (Exception e) {
+            // Si no hay tarea anterior, ir al launcher
+        }
         try {
             Intent home = new Intent(Intent.ACTION_MAIN);
             home.addCategory(Intent.CATEGORY_HOME);
             home.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
             startActivity(home);
-        } catch (Exception e) {
-            // Si falla, intentar moveTaskToBack como alternativa
-            try {
-                moveTaskToBack(true);
-            } catch (Exception e2) {
-                // Nada más que hacer
-            }
+        } catch (Exception e2) {
+            // Nada más que hacer
+        }
+    }
+
+    /** onNewIntent: el WakeService o scripts piden volver a la app anterior
+     *  con EXTRA_GO_BACK (evita abrir el launcher y pisar Maps/Spotify). */
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        if (intent != null && intent.getBooleanExtra(EXTRA_GO_BACK, false)) {
+            appendLog("GO_BACK: volviendo a la app anterior");
+            goHome();
         }
     }
 

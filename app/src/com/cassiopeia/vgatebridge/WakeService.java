@@ -186,15 +186,30 @@ public class WakeService extends Service {
         }
     }
 
-    /** Vuelve al launcher del vehículo sin matar nada. */
+    /** Vuelve a la app anterior sin abrir el launcher: lanza MainActivity con
+     *  EXTRA_GO_BACK (singleTop + CLEAR_TOP → onNewIntent → moveTaskToBack).
+     *  Si el usuario estaba en Maps/Spotify antes del arranque, se queda ahí;
+     *  si no había nada, se revela el launcher igualmente. */
     private void goHome() {
         try {
-            Intent home = new Intent(Intent.ACTION_MAIN);
-            home.addCategory(Intent.CATEGORY_HOME);
-            home.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-            startActivity(home);
+            Intent back = new Intent(this, MainActivity.class);
+            back.setAction(Intent.ACTION_MAIN);
+            back.addCategory(Intent.CATEGORY_LAUNCHER);
+            back.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK
+                    | Intent.FLAG_ACTIVITY_SINGLE_TOP
+                    | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+            back.putExtra(MainActivity.EXTRA_GO_BACK, true);
+            startActivity(back);
         } catch (Exception e) {
-            // Nada más que hacer
+            // Fallback: launcher
+            try {
+                Intent home = new Intent(Intent.ACTION_MAIN);
+                home.addCategory(Intent.CATEGORY_HOME);
+                home.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                startActivity(home);
+            } catch (Exception e2) {
+                // Nada más que hacer
+            }
         }
     }
 
