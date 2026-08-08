@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.cassiopeia.vgatebridge"
-    android:versionCode="19"
-    android:versionName="4.6">
+    android:versionCode="20"
+    android:versionName="4.7">
 
     <uses-sdk android:minSdkVersion="21" android:targetSdkVersion="29" />
 
@@ -19,6 +19,10 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
+    <!-- v4.7: necesarios para mover la tarea de Tailscale al fondo y volver
+         a la app anterior (Maps/Spotify) tras abrir la VPN. -->
+    <uses-permission android:name="android.permission.GET_TASKS" />
+    <uses-permission android:name="android.permission.REORDER_TASKS" />
 
     <application
         android:label="VgateBridge"
@@ -29,7 +33,7 @@
         <activity
             android:name=".MainActivity"
             android:exported="true"
-            android:launchMode="singleTop"
+            android:launchMode="singleTask"
             android:theme="@android:style/Theme.DeviceDefault.NoActionBar"
             android:showOnLockScreen="true"
             android:showWhenLocked="true"

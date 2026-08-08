@@ -186,30 +186,50 @@ public class WakeService extends Service {
         }
     }
 
-    /** Vuelve a la app anterior sin abrir el launcher: lanza MainActivity con
-     *  EXTRA_GO_BACK (singleTop + CLEAR_TOP → onNewIntent → moveTaskToBack).
-     *  Si el usuario estaba en Maps/Spotify antes del arranque, se queda ahí;
-     *  si no había nada, se revela el launcher igualmente. */
+    /** Vuelve a la app anterior tras lanzar Tailscale.
+     *
+     *  v4.7 FIX: el intent HOME y el moveTaskToBack de nuestra propia tarea
+     *  no servían — Tailscale se abre en SU propia tarea, encima de la app
+     *  anterior (Maps/Spotify). La forma correcta es mover la tarea SUPERIOR
+     *  (Tailscale) al fondo con ActivityManager, revelando la anterior.
+     *  Requiere GET_TASKS + REORDER_TASKS (declarados en el manifest).
+     *  Fallback: intent HOME clásico. */
     private void goHome() {
         try {
-            Intent back = new Intent(this, MainActivity.class);
-            back.setAction(Intent.ACTION_MAIN);
-            back.addCategory(Intent.CATEGORY_LAUNCHER);
-            back.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK
-                    | Intent.FLAG_ACTIVITY_SINGLE_TOP
-                    | Intent.FLAG_ACTIVITY_CLEAR_TOP);
-            back.putExtra(MainActivity.EXTRA_GO_BACK, true);
-            startActivity(back);
-        } catch (Exception e) {
-            // Fallback: launcher
-            try {
-                Intent home = new Intent(Intent.ACTION_MAIN);
-                home.addCategory(Intent.CATEGORY_HOME);
-                home.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-                startActivity(home);
-            } catch (Exception e2) {
-                // Nada más que hacer
+            android.app.ActivityManager am =
+                    (android.app.ActivityManager) getSystemService(Context.ACTIVITY_SERVICE);
+            if (am != null) {
+                java.util.List<android.app.ActivityManager.RunningTaskInfo> tasks =
+                        am.getRunningTasks(1);
+                if (tasks != null && !tasks.isEmpty()) {
+                    android.app.ActivityManager.RunningTaskInfo top = tasks.get(0);
+                    // Solo mover si la tarea al frente NO es la nuestra
+                    if (top.topActivity != null
+                            && !getPackageName().equals(top.topActivity.getPackageName())) {
+                        // moveTaskToBack(int) es @hide desde API 21 (no está en
+                        // la SDK pública) → se invoca por reflection. Funciona
+                        // en Android 10 con REORDER_TASKS + GET_TASKS.
+                        try {
+                            java.lang.reflect.Method m = android.app.ActivityManager.class
+                                    .getMethod("moveTaskToBack", int.class);
+                            m.invoke(am, top.id);
+                            return;
+                        } catch (Exception re) {
+                            // Reflection falló → fallback al launcher
+                        }
+                    }
+                }
             }
+        } catch (Exception e) {
+            // Caer al fallback
+        }
+        try {
+            Intent home = new Intent(Intent.ACTION_MAIN);
+            home.addCategory(Intent.CATEGORY_HOME);
+            home.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            startActivity(home);
+        } catch (Exception e2) {
+            // Nada más que hacer
         }
     }
 
