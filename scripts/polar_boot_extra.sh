@@ -54,6 +54,22 @@ start_watchdog
 sleep 2
 start_watchdog
 
+# 5b. Recolector OBD local — fuente primaria de datos SIN Internet.
+#     (Añadido 2026-08-03: se moría tras cada arranque y NADIE lo relanzaba
+#     → la webapp se quedaba sin datos. El crond lo mantiene vivo ahora.
+#     ⚠️ 2026-08-09: se perdió al desplegar desde el repo anonimizado — el
+#     repo no tenía esta sección. Restaurada en ambos sitios.)
+start_local_collector() {
+    if ! pgrep -f "obd_local_collector.py" > /dev/null 2>&1; then
+        if [ -f ~/obd_local_collector.py ]; then
+            nohup python3 ~/obd_local_collector.py >/dev/null 2>&1 &
+        fi
+    fi
+}
+start_local_collector
+sleep 2
+start_local_collector
+
 # 6. Tailscale — refuerzo del WakeService.
 #    El WakeService (VgateBridge v9.2) espera red y abre Tailscale cuando hay
 #    conectividad. Este refuerzo cubre el caso de que la ROM mate el proceso
