@@ -138,6 +138,20 @@ public class MainActivity extends Activity {
             appendLog("Error BridgeService: " + e.getMessage());
         }
 
+        // 1b. CanSnifferService -> lee consumo CAN del decodificador (TWUtil)
+        //     y lo vuelca a /sdcard/Download/can_readings.csv (v4.8)
+        try {
+            Intent can = new Intent(this, CanSnifferService.class);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                startForegroundService(can);
+            } else {
+                startService(can);
+            }
+            appendLog("CanSnifferService lanzado");
+        } catch (Exception e) {
+            appendLog("Error CanSnifferService: " + e.getMessage());
+        }
+
         // 2. WakeService -> RUN_COMMAND -> polar_boot_extra.sh (Termux:
         //    sshd, crond, GPS logger, recolector OBD local)
         try {

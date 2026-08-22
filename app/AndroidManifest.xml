@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.cassiopeia.vgatebridge"
-    android:versionCode="20"
-    android:versionName="4.7">
+    android:versionCode="21"
+    android:versionName="4.8">
 
     <uses-sdk android:minSdkVersion="21" android:targetSdkVersion="29" />
 
@@ -51,6 +51,13 @@
 
         <service
             android:name=".WakeService"
+            android:exported="false"
+            android:enabled="true" />
+
+        <!-- v4.8: lee el consumo CAN del decodificador (TWUtil) y lo vuelca
+             a /sdcard/Download/can_readings.csv para el recolector Termux. -->
+        <service
+            android:name=".CanSnifferService"
             android:exported="false"
             android:enabled="true" />
 
