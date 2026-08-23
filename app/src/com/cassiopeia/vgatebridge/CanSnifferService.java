@@ -140,7 +140,14 @@ public class CanSnifferService extends Service {
 
     private void openCsv() {
         try {
-            File dir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS);
+            // Android 10: /sdcard/Download exige permiso runtime (EACCES en
+            // servicio background). getExternalFilesDir() NO requiere permiso
+            // y Termux (con storage) puede leerlo → /sdcard/Android/data/
+            // com.cassiopeia.vgatebridge/files/Download/can_readings.csv
+            File dir = getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS);
+            if (dir == null) {
+                dir = getFilesDir(); // fallback: privado (Termux no lo lee)
+            }
             if (!dir.exists()) dir.mkdirs();
             File f = new File(dir, CSV_NAME);
             boolean header = !f.exists() || f.length() == 0;

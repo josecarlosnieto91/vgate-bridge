@@ -13,6 +13,7 @@ import android.content.SharedPreferences;
 import android.os.Build;
 import android.os.IBinder;
 import android.os.PowerManager;
+import android.util.Log;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.InputStream;
@@ -65,6 +66,22 @@ public class BridgeService extends Service {
 
         SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
         btMac = prefs.getString(KEY_MAC, null);
+
+        // v4.8.1: arrancar el CanSnifferService desde aquí (no solo desde
+        // MainActivity.carLaunchMode): si la app ya está abierta, onCreate de
+        // MainActivity no se vuelve a llamar y el sniffer CAN nunca arranca.
+        // BridgeService se inicia por todos los caminos (BootReceiver, botón,
+        // carLaunchMode), así que este es el punto de anclaje fiable.
+        try {
+            Intent can = new Intent(this, CanSnifferService.class);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                startForegroundService(can);
+            } else {
+                startService(can);
+            }
+        } catch (Exception e) {
+            Log.e("BridgeService", "no se pudo arrancar CanSnifferService", e);
+        }
     }
 
     @Override
