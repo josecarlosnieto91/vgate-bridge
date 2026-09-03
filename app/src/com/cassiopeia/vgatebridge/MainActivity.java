@@ -251,9 +251,14 @@ public class MainActivity extends Activity {
         layout.setPadding(20, 20, 20, 20);
         layout.setBackgroundColor(0xFF1A1A2E);
 
-        // Title
+        // Title — versión real del manifest (FIX 2026-09-03: estaba
+        // hardcodeada a v4.2 y nunca se actualizaba con los releases)
         TextView title = new TextView(this);
-        title.setText("VGATE BRIDGE v4.2");
+        String ver = "?";
+        try {
+            ver = getPackageManager().getPackageInfo(getPackageName(), 0).versionName;
+        } catch (Exception ignored) {}
+        title.setText("VGATE BRIDGE v" + ver);
         title.setTextSize(20);
         title.setTextColor(0xFF00FF00);
         title.setPadding(10, 10, 10, 20);

@@ -235,7 +235,12 @@ public class BridgeService extends Service {
             String date = new SimpleDateFormat("yyyy-MM-dd", Locale.US).format(new Date());
             File f = new File(dir, "vgatebridge-" + date + ".log");
             logFile = new PrintWriter(new FileOutputStream(f, true));
-            log("--- VgateBridge v3 iniciado ---");
+            // Versión real del manifest (FIX 2026-09-03: decía v3 hardcodeado)
+            String ver = "?";
+            try {
+                ver = getPackageManager().getPackageInfo(getPackageName(), 0).versionName;
+            } catch (Exception ignored) {}
+            log("--- VgateBridge v" + ver + " iniciado ---");
         } catch (Exception e) {
             System.err.println("No se pudo abrir log file: " + e.getMessage());
         }

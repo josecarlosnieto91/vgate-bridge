@@ -56,6 +56,25 @@ public class WakeService extends Service {
         }
     };
 
+    // FIX 2026-09-03: la tablet arranca en MODO AVIÓN y la red tarda en
+    // activarse. El RUN_COMMAND a Termux se lanzaba a los 1 s → se perdía si
+    // Termux aún no estaba listo → crond/recolector/GPS nunca arrancaban.
+    // Ahora: reintentos espaciados hasta N intentos, para cubrir el arranque
+    // lento de la ROM y la espera de red.
+    private int runCommandAttempts = 0;
+    private static final int RUN_COMMAND_MAX_ATTEMPTS = 6;   // ~90 s total
+    private static final long RUN_COMMAND_RETRY_MS = 15000;   // cada 15 s
+
+    private final Runnable runCommandRetryTask = new Runnable() {
+        @Override
+        public void run() {
+            if (runCommandAttempts >= RUN_COMMAND_MAX_ATTEMPTS) return;
+            startTermuxServices();
+            runCommandAttempts++;
+            handler.postDelayed(runCommandRetryTask, RUN_COMMAND_RETRY_MS);
+        }
+    };
+
     private final Runnable termuxWakeTask = new Runnable() {
         @Override
         public void run() {
@@ -86,16 +105,20 @@ public class WakeService extends Service {
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
-        // 1. RUN_COMMAND -> Termux (polar_boot_extra.sh)
-        handler.postDelayed(runCommandTask, 1000);
-        // 2. Despertar Termux (sacar de "stopped")
-        handler.postDelayed(termuxWakeTask, 1500);
+        // 1. RUN_COMMAND -> Termux (polar_boot_extra.sh) — primer intento tras
+        //    un margen inicial (la ROM tarda en salir del modo avión), luego
+        //    reintentos cada 15 s hasta ~90 s (cubre arranque lento).
+        runCommandAttempts = 0;
+        handler.postDelayed(runCommandRetryTask, 3000);
+        // 2. Despertar Termux (sacar de "stopped") — también con margen
+        handler.postDelayed(termuxWakeTask, 5000);
         return START_NOT_STICKY;
     }
 
     @Override
     public void onDestroy() {
         handler.removeCallbacks(runCommandTask);
+        handler.removeCallbacks(runCommandRetryTask);
         handler.removeCallbacks(termuxWakeTask);
         super.onDestroy();
     }
