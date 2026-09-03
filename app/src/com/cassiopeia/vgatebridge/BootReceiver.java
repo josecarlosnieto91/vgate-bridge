@@ -16,16 +16,39 @@ public class BootReceiver extends BroadcastReceiver {
             Intent.ACTION_LOCKED_BOOT_COMPLETED.equals(action)) {
             startBridge(context);
             startTermuxServices(context);
+            openMainActivity(context);
 
         // Cable de corriente conectado (vuelta de tensión tras apagado corto)
         } else if (Intent.ACTION_POWER_CONNECTED.equals(action)) {
             startBridge(context);
             startTermuxServices(context);
+            openMainActivity(context);
 
         // Pantalla desbloqueada (tablet despierta tras suspensión)
         } else if (Intent.ACTION_USER_PRESENT.equals(action)) {
             startBridge(context);
             startTermuxServices(context);
+            openMainActivity(context);
+        }
+    }
+
+    /**
+     * Abre MainActivity para que carLaunchMode ejecute el stack completo en
+     * foreground. FIX 2026-09-03: antes solo se arrancaban servicios; sin la
+     * app en foreground, Android 10 bloquea que WakeService abra Termux
+     * ("Background activity start blocked") → crond/recolector/GPS nunca
+     * arrancaban al encender el coche; solo al abrir la app manualmente.
+     * Los receivers de BOOT/POWER sí pueden iniciar actividades. MainActivity
+     * es singleTask y con car_mode=true ejecuta carLaunchMode (idempotente:
+     * si la tarea ya existe, onNewIntent; si ya está corriendo, no duplica).
+     */
+    private void openMainActivity(Context context) {
+        try {
+            Intent i = new Intent(context, MainActivity.class);
+            i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            context.startActivity(i);
+        } catch (Exception e) {
+            // No debe impedir el arranque del bridge
         }
     }
 

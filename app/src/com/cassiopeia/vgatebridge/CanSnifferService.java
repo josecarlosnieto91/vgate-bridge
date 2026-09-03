@@ -78,7 +78,9 @@ public class CanSnifferService extends Service {
 
             if (csv != null) {
                 String ts = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US).format(new Date());
-                csv.printf("%s,%.1f,%d,%d%n", ts, l100, range, odom);
+                // Locale.US obligatorio: %.1f con locale español escribe "4,4"
+                // (coma decimal) y rompe el CSV para el parser Python.
+                csv.printf(Locale.US, "%s,%.1f,%d,%d%n", ts, l100, range, odom);
                 csv.flush();
                 lastWrite = now;
             }
