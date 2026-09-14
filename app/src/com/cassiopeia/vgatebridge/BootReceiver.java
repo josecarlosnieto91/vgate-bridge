@@ -22,13 +22,16 @@ public class BootReceiver extends BroadcastReceiver {
         } else if (Intent.ACTION_POWER_CONNECTED.equals(action)) {
             startBridge(context);
             startTermuxServices(context);
-            openMainActivity(context);
 
         // Pantalla desbloqueada (tablet despierta tras suspensión)
         } else if (Intent.ACTION_USER_PRESENT.equals(action)) {
+            // FIX 2026-09-04: USER_PRESENT se dispara en CADA desbloqueo de
+            // pantalla (en el coche: cualquier toque que la despierta), no
+            // solo al boot. Abrir MainActivity aquí → carLaunchMode →
+            // goHome() a los 2.5 s → volvía al launcher desde Maps/Spotify.
+            // Ahora: solo arrancar servicios (idempotente, sin foco).
             startBridge(context);
             startTermuxServices(context);
-            openMainActivity(context);
         }
     }
 
