@@ -48,12 +48,14 @@ public class CanSnifferService extends Service {
     private static final short[] CHANNELS = {266, 1281, 1288, 267, 513, 524, 523, -24804};
 
     private static final String CSV_NAME = "can_readings.csv";
-    private static final long MIN_INTERVAL_MS = 2000; // no escribir más de 1/2s
+    private static final long MIN_INTERVAL_MS = 2000; // en movimiento: 1 fila/2s
+    private static final long IDLE_INTERVAL_MS = 30000; // parado: 1 fila/30s
 
     private TWUtil tw;
     private PrintWriter csv;
     private long lastWrite = 0;
     private int lastConsRaw = -1;
+    private int lastRange = -1;
 
     private final Handler handler = new Handler(Looper.getMainLooper()) {
         @Override
@@ -69,12 +71,22 @@ public class CanSnifferService extends Service {
             int odom = ((d[4] & 0xFF) << 8) | (d[5] & 0xFF);
 
             long now = System.currentTimeMillis();
-            // Evitar duplicados: mismo valor en la misma ventana
-            if (consRaw == lastConsRaw && (now - lastWrite) < MIN_INTERVAL_MS) return;
-            lastConsRaw = consRaw;
-
             float l100 = consRaw == 0xFFFF ? -1f : consRaw / 10.0f;
-            if (l100 < 0) return; // N/D en parado — no escribir
+
+            if (l100 < 0) {
+                // Consumo medio N/D (coche parado). El RANGO sí llega y es lo
+                // que alimenta el detector de repostajes y la línea "Restante":
+                // antes se descartaba la fila entera y, si repostabas sin
+                // moverte, el salto de rango no se registraba.
+                // Cadencia lenta (30s) o cuando el rango cambia: no tiene
+                // sentido escribir 1 fila/2s de un valor casi constante.
+                if (range <= 0) return;
+                if (range == lastRange && (now - lastWrite) < IDLE_INTERVAL_MS) return;
+            } else if (consRaw == lastConsRaw && (now - lastWrite) < MIN_INTERVAL_MS) {
+                return; // mismo consumo en la misma ventana: duplicado
+            }
+            lastConsRaw = consRaw;
+            lastRange = range;
 
             if (csv != null) {
                 String ts = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US).format(new Date());
