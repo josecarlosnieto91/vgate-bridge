@@ -48,14 +48,11 @@ public class CanSnifferService extends Service {
     private static final short[] CHANNELS = {266, 1281, 1288, 267, 513, 524, 523, -24804};
 
     private static final String CSV_NAME = "can_readings.csv";
-    private static final long MIN_INTERVAL_MS = 2000; // en movimiento: 1 fila/2s
-    private static final long IDLE_INTERVAL_MS = 30000; // parado: 1 fila/30s
 
     private TWUtil tw;
     private PrintWriter csv;
-    private long lastWrite = 0;
-    private int lastConsRaw = -1;
-    private int lastRange = -1;
+    /** Cadencia/duplicados: lógica pura en CanWriteGate (probada aparte). */
+    private final CanWriteGate gate = new CanWriteGate();
 
     private final Handler handler = new Handler(Looper.getMainLooper()) {
         @Override
@@ -73,20 +70,9 @@ public class CanSnifferService extends Service {
             long now = System.currentTimeMillis();
             float l100 = consRaw == 0xFFFF ? -1f : consRaw / 10.0f;
 
-            if (l100 < 0) {
-                // Consumo medio N/D (coche parado). El RANGO sí llega y es lo
-                // que alimenta el detector de repostajes y la línea "Restante":
-                // antes se descartaba la fila entera y, si repostabas sin
-                // moverte, el salto de rango no se registraba.
-                // Cadencia lenta (30s) o cuando el rango cambia: no tiene
-                // sentido escribir 1 fila/2s de un valor casi constante.
-                if (range <= 0) return;
-                if (range == lastRange && (now - lastWrite) < IDLE_INTERVAL_MS) return;
-            } else if (consRaw == lastConsRaw && (now - lastWrite) < MIN_INTERVAL_MS) {
-                return; // mismo consumo en la misma ventana: duplicado
-            }
-            lastConsRaw = consRaw;
-            lastRange = range;
+            // En parado el consumo medio es N/D pero el rango llega: se escribe
+            // igualmente (más lento) para no perder el salto de un repostaje.
+            if (!gate.shouldWrite(consRaw, range, now)) return;
 
             if (csv != null) {
                 String ts = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US).format(new Date());
@@ -94,7 +80,6 @@ public class CanSnifferService extends Service {
                 // (coma decimal) y rompe el CSV para el parser Python.
                 csv.printf(Locale.US, "%s,%.1f,%d,%d%n", ts, l100, range, odom);
                 csv.flush();
-                lastWrite = now;
             }
         }
     };
