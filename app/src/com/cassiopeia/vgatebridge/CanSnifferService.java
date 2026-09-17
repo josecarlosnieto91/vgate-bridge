@@ -48,6 +48,28 @@ public class CanSnifferService extends Service {
     private static final short[] CHANNELS = {266, 1281, 1288, 267, 513, 524, 523, -24804};
 
     private static final String CSV_NAME = "can_readings.csv";
+    // ── Descubrimiento (temporal, 2026-09-17) ────────────────────────────
+    // El sniffer solo interpretaba 1281/51; el resto del caudal suscrito se
+    // tiraba a la basura. Esto deja constancia de QUÉ llega por cada
+    // (canal, dato) para mapear el resto del coche (temperatura exterior,
+    // puertas, luces…). Coste: una búsqueda en mapa por mensaje; se puede
+    // quitar cuando el mapa esté hecho.
+    private static final String CENSUS_NAME = "can_census.csv";
+    private static final String TEMP_NAME = "can_temp.csv";
+    private static final long CENSUS_DUMP_MS = 300_000L;   // volcado cada 5 min
+    private final java.util.HashMap<String, Censo> censo = new java.util.HashMap<>();
+    private long lastCensusDump;
+    private String ultimaTempHex = "";
+
+    /** Una fila del censo: cuántos mensajes, de qué tamaño y cómo son. */
+    private static final class Censo {
+        long n;
+        int largo;
+        String hex = "";
+        int minByte = Integer.MAX_VALUE;
+        int maxByte = Integer.MIN_VALUE;
+        byte[] ultimo;
+    }
 
     private TWUtil tw;
     private PrintWriter csv;
@@ -57,6 +79,18 @@ public class CanSnifferService extends Service {
     private final Handler handler = new Handler(Looper.getMainLooper()) {
         @Override
         public void handleMessage(Message msg) {
+            // 0. Censo: deja constancia de TODO lo que llega (no toca la
+            //    recogida de producción, que sigue igual debajo).
+            anotaCenso(msg);
+
+            // 1. Temperatura exterior (ID 54 del canal 1281): se guarda aparte
+            //    para poder decodificarla con datos reales sin tocar el CSV de
+            //    producción ni el esquema de la BD.
+            if (msg.what == 1281 && msg.arg1 == 54 && msg.obj instanceof byte[]) {
+                anotaTemperatura((byte[]) msg.obj);
+                return;
+            }
+
             if (msg.what != 1281 || msg.arg1 != 51) return;
             Object o = msg.obj;
             if (!(o instanceof byte[])) return;
@@ -135,6 +169,88 @@ public class CanSnifferService extends Service {
             }
         } catch (Throwable ignored) {}
         tw = null;
+    }
+
+    /** Anota un mensaje en el censo. Nunca debe afectar a la producción. */
+    private void anotaCenso(Message msg) {
+        try {
+            if (!(msg.obj instanceof byte[])) return;
+            byte[] d = (byte[]) msg.obj;
+            String clave = msg.what + "/" + msg.arg1;
+            Censo c = censo.get(clave);
+            if (c == null) {
+                c = new Censo();
+                censo.put(clave, c);
+            }
+            c.n++;
+            c.largo = d.length;
+            if (c.ultimo == null || !java.util.Arrays.equals(c.ultimo, d)) {
+                c.ultimo = d.clone();
+                StringBuilder sb = new StringBuilder();
+                for (byte b : d) sb.append(String.format(Locale.US, "%02X", b));
+                c.hex = sb.toString();
+            }
+            if (d.length > 0) {
+                int v = d[0] & 0xFF;
+                if (v < c.minByte) c.minByte = v;
+                if (v > c.maxByte) c.maxByte = v;
+            }
+            long now = System.currentTimeMillis();
+            if (lastCensusDump == 0 || now - lastCensusDump >= CENSUS_DUMP_MS) {
+                volcarCenso(now);
+            }
+        } catch (Exception e) {
+            // Silencio a propósito: el censo es auxiliar, la recogida es lo crítico.
+        }
+    }
+
+    /** Foto del censo (se reescribe entera: son pocas claves y así no crece). */
+    private void volcarCenso(long now) {
+        lastCensusDump = now;
+        try {
+            File dir = getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS);
+            if (dir == null) return;
+            if (!dir.exists()) dir.mkdirs();
+            PrintWriter out = new PrintWriter(new FileWriter(new File(dir, CENSUS_NAME), false), true);
+            out.println("what,arg1,n,bytes,hex,byte0_min,byte0_max");
+            for (java.util.Map.Entry<String, Censo> e : censo.entrySet()) {
+                String[] k = e.getKey().split("/");
+                Censo c = e.getValue();
+                out.printf(Locale.US, "%s,%s,%d,%d,%s,%d,%d%n",
+                        k[0], k[1], c.n, c.largo, c.hex,
+                        c.minByte == Integer.MAX_VALUE ? -1 : c.minByte,
+                        c.maxByte == Integer.MIN_VALUE ? -1 : c.maxByte);
+            }
+            out.close();
+        } catch (Exception e) {
+            Log.e(TAG, "volcado del censo falló", e);
+        }
+    }
+
+    /**
+     * Temperatura exterior (1281/54). Se guarda el hex en crudo y solo cuando
+     * cambia: con eso se decodifica (escala y offset) comparando con la
+     * temperatura real. No toca el CSV de producción ni el esquema de la BD.
+     */
+    private void anotaTemperatura(byte[] d) {
+        try {
+            StringBuilder sb = new StringBuilder();
+            for (byte b : d) sb.append(String.format(Locale.US, "%02X", b));
+            String hex = sb.toString();
+            if (hex.equals(ultimaTempHex)) return;
+            ultimaTempHex = hex;
+            File dir = getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS);
+            if (dir == null) return;
+            File f = new File(dir, TEMP_NAME);
+            boolean cabecera = !f.exists() || f.length() == 0;
+            PrintWriter out = new PrintWriter(new FileWriter(f, true), true);
+            if (cabecera) out.println("ts,hex");
+            String ts = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US).format(new Date());
+            out.printf(Locale.US, "%s,%s%n", ts, hex);
+            out.close();
+        } catch (Exception e) {
+            Log.e(TAG, "no se pudo anotar la temperatura", e);
+        }
     }
 
     private void openCsv() {

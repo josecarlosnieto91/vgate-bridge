@@ -42,17 +42,11 @@ start_logger
 sleep 2
 start_logger
 
-# 5. Watchdog — igual
-start_watchdog() {
-    if ! pgrep -f "polar_watchdog.sh" > /dev/null 2>&1; then
-        if [ -f ~/polar_watchdog.sh ]; then
-            nohup sh ~/polar_watchdog.sh >/dev/null 2>&1 &
-        fi
-    fi
-}
-start_watchdog
-sleep 2
-start_watchdog
+# 5. (Eliminado 2026-09-17) Watchdog de 30 s — era REDUNDANTE: solo cubría
+#    sshd y el GPS logger, que este mismo script revive cada minuto, y costaba
+#    `ps aux` + greps cada 30 s (~17.000 spawns/día) además de impedir el
+#    reposo del dispositivo. La recuperación pasa de ≤30 s a ≤60 s: irrelevante.
+#    El fichero ~/polar_watchdog.sh ya no se usa (se borra en el despliegue).
 
 # 5b. Recolector OBD local — fuente primaria de datos SIN Internet.
 #     (Añadido 2026-08-03: se moría tras cada arranque y NADIE lo relanzaba
@@ -70,6 +64,22 @@ start_local_collector
 sleep 2
 start_local_collector
 
+# 5c. Re-armar el trabajo del JobScheduler (OPT 2026-09-17).
+#     Un trabajo `--persisted true` NO sobrevive aquí al ciclo de corriente:
+#     tras el apagón del 17/09, `termux-job-scheduler -p` respondía «No jobs
+#     found». Así que se vuelve a programar en cada arranque.
+#     ⚠️ Solo en los primeros 2 minutos de uptime: si no, se pagaría un IPC
+#     al JobScheduler cada minuto (justo lo que estamos quitando).
+up=$(cut -d. -f1 /proc/uptime 2>/dev/null || echo 999)
+if [ "${up:-999}" -lt 120 ] && command -v termux-job-scheduler > /dev/null 2>&1; then
+    case "$(termux-job-scheduler -p 2>/dev/null)" in
+        *"Job 7:"*) : ;;   # ya está programado
+        *) termux-job-scheduler -s "$HOME/polar_job.sh" --job-id 7 \
+               --period-ms 900000 --persisted true \
+               --battery-not-low false --network any > /dev/null 2>&1 ;;
+    esac
+fi
+
 # 6. Tailscale — refuerzo del WakeService.
 #    El WakeService (VgateBridge v9.2) espera red y abre Tailscale cuando hay
 #    conectividad. Este refuerzo cubre el caso de que la ROM mate el proceso
@@ -81,8 +91,16 @@ start_local_collector
 #    solo se limpia en boot completo (termux-boot.sh). Así, las pérdidas de
 #    conexión posteriores (cambio de red, torre móvil) NO reabren la app y no
 #    roban el foco al usuario (Maps/Spotify quedan al frente).
+#    ⚠️ OPT 2026-09-17: el chequeo profundo (dos pings seguidos) se hacía CADA
+#    minuto y despertaba la radio 1.440 veces al día. Ahora como mucho cada
+#    5 min.
+#    ⚠️ El gate es SOLO temporal a propósito: desde Termux no se puede saber si
+#    la app de Tailscale está viva (`pgrep -f tailscaled` no la ve — Android no
+#    deja ver procesos de otras apps), así que ese atajo daba siempre «no
+#    está» y no gateaba nada.
 TS_FLAG=~/.tailscale_retry_ts
 TS_ONCE=~/.tailscale_launched_once
+TS_CHECK=~/.tailscale_last_check
 TS_PEER=100.64.0.1   # server — si responde, la VPN Tailscale está up
 TS_INTERNET=1.1.1.1      # referencia de conectividad general
 
@@ -94,8 +112,15 @@ has_internet() {
     ping -c 1 -W 3 $TS_INTERNET >/dev/null 2>&1
 }
 
-if ! tailscale_connected; then
-    if has_internet; then
+_ts_now=$(date +%s)
+_ts_last=0
+[ -f "$TS_CHECK" ] && _ts_last=$(cat "$TS_CHECK" 2>/dev/null || echo 0)
+if [ $((_ts_now - _ts_last)) -ge 300 ]; then
+    echo "$_ts_now" > "$TS_CHECK"
+    if tailscale_connected; then
+        # VPN OK: limpiar flag
+        rm -f "$TS_FLAG"
+    elif has_internet; then
         if [ ! -f "$TS_ONCE" ]; then
             # Primera vez en este arranque: abrir Tailscale y marcar.
             # A partir de aquí, aunque la VPN se caiga, NO se reabre.
@@ -114,7 +139,4 @@ if ! tailscale_connected; then
             fi
         fi
     fi
-else
-    # VPN OK: limpiar flag
-    rm -f "$TS_FLAG"
 fi
