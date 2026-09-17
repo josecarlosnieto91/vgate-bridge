@@ -82,6 +82,16 @@ public class BridgeService extends Service {
         } catch (Exception e) {
             Log.e("BridgeService", "no se pudo arrancar CanSnifferService", e);
         }
+
+        // v5.0.5: vigilante EXTERNO de Termux. Los vigilantes de dentro de
+        // Termux (crond) son ciegos a su propia muerte: si Android mata el
+        // proceso, el sistema entero queda caído en silencio (2 días el 15/09).
+        // Este servicio sí sobrevive, así que es quien puede notarlo y relanzar.
+        try {
+            TermuxBridge.startWatch(this);
+        } catch (Exception e) {
+            Log.e("BridgeService", "no se pudo arrancar el vigilante de Termux", e);
+        }
     }
 
     @Override

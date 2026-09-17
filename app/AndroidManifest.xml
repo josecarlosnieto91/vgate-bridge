@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.cassiopeia.vgatebridge"
-    android:versionCode="30"
-    android:versionName="5.0.4">
+    android:versionCode="31"
+    android:versionName="5.0.5">
 
     <uses-sdk android:minSdkVersion="21" android:targetSdkVersion="29" />
 
@@ -23,6 +23,11 @@
          a la app anterior (Maps/Spotify) tras abrir la VPN. -->
     <uses-permission android:name="android.permission.GET_TASKS" />
     <uses-permission android:name="android.permission.REORDER_TASKS" />
+    <!-- v5.0.5: sin esto el RUN_COMMAND a Termux se RECHAZA en silencio y el
+         rescate de Termux nunca funcionó (15/09: 2 días caído). Además hay que
+         CONCEDERLO: Ajustes → Apps → VgateBridge → Permisos → permisos
+         adicionales → «Run commands in Termux environment». -->
+    <uses-permission android:name="com.termux.permission.RUN_COMMAND" />
 
     <application
         android:label="VgateBridge"

@@ -165,20 +165,12 @@ public class WakeService extends Service {
 
     /**
      * Lanza los servicios de Termux via RUN_COMMAND.
-     * Requiere allow-external-apps=true en ~/.termux/termux.properties.
+     * Requiere allow-external-apps=true en ~/.termux/termux.properties y el
+     * permiso com.termux.permission.RUN_COMMAND concedido (v5.0.5).
      * Si falla (Termux ausente o sin permiso), no rompe nada: el bridge sigue.
      */
     private void startTermuxServices() {
-        try {
-            Intent i = new Intent("com.termux.RUN_COMMAND");
-            i.setClassName("com.termux", "com.termux.app.RunCommandService");
-            i.putExtra("com.termux.RUN_COMMAND_PATH",
-                    "/data/data/com.termux/files/home/polar_boot_extra.sh");
-            i.putExtra("com.termux.RUN_COMMAND_BACKGROUND", true);
-            startService(i);
-        } catch (Exception e) {
-            // Ignorar: no debe impedir el arranque del bridge
-        }
+        TermuxBridge.runBootScript(this);
     }
 
     /**
