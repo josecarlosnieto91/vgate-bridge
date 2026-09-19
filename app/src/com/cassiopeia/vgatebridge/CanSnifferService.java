@@ -79,6 +79,7 @@ public class CanSnifferService extends Service {
     /** Una fila del censo: cuántos mensajes, de qué tamaño y cómo son. */
     private static final class Censo {
         String tipo = "";   // v5.0.9: bytes/int/long/texto/vacio
+        int arg2;             // v5.0.10
         long n;
         int largo;
         String hex = "";
@@ -227,16 +228,18 @@ public class CanSnifferService extends Service {
                 for (byte b : d) sb0.append(String.format(Locale.US, "%02X", b));
                 hex = sb0.toString();
             } else if (o instanceof Integer) {
-                tipo = "int"; hex = String.valueOf((Integer) o);
+                tipo = "int"; hex = o + "|a2=" + msg.arg2;
             } else if (o instanceof Long) {
-                tipo = "long"; hex = String.valueOf((Long) o);
+                tipo = "long"; hex = o + "|a2=" + msg.arg2;
             } else if (o instanceof String) {
-                tipo = "texto"; hex = ((String) o).replace(',', ' ');
+                tipo = "texto"; hex = ((String) o).replace(',', ' ') + "|a2=" + msg.arg2;
             } else if (o == null) {
-                tipo = "vacio"; hex = "";
+                // v5.0.10: con payload nulo el dato va en arg1/arg2. Si no se
+                // registra arg2, un cambio de valor no se ve como cambio.
+                tipo = "vacio"; hex = "a2=" + msg.arg2;
             } else {
                 tipo = o.getClass().getSimpleName();
-                hex = String.valueOf(o).replace(',', ' ');
+                hex = String.valueOf(o).replace(',', ' ') + "|a2=" + msg.arg2;
             }
             String clave = msg.what + "/" + msg.arg1;
             Censo c = censo.get(clave);
@@ -246,6 +249,7 @@ public class CanSnifferService extends Service {
             }
             c.n++;
             c.tipo = tipo;
+            c.arg2 = msg.arg2;
             if (d != null) c.largo = d.length;
             boolean cambio = !hex.equals(c.hex);
             if (cambio) c.hex = hex;
@@ -316,12 +320,12 @@ public class CanSnifferService extends Service {
             if (dir == null) return;
             if (!dir.exists()) dir.mkdirs();
             PrintWriter out = new PrintWriter(new FileWriter(new File(dir, CENSUS_NAME), false), true);
-            out.println("what,arg1,n,bytes,tipo,hex,byte0_min,byte0_max");
+            out.println("what,arg1,n,arg2,bytes,tipo,hex,byte0_min,byte0_max");
             for (java.util.Map.Entry<String, Censo> e : censo.entrySet()) {
                 String[] k = e.getKey().split("/");
                 Censo c = e.getValue();
-                out.printf(Locale.US, "%s,%s,%d,%d,%s,%s,%d,%d%n",
-                        k[0], k[1], c.n, c.largo, c.tipo, c.hex,
+                out.printf(Locale.US, "%s,%s,%d,%d,%d,%s,%s,%d,%d%n",
+                        k[0], k[1], c.n, c.arg2, c.largo, c.tipo, c.hex,
                         c.minByte == Integer.MAX_VALUE ? -1 : c.minByte,
                         c.maxByte == Integer.MIN_VALUE ? -1 : c.maxByte);
             }
