@@ -18,6 +18,7 @@ import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
+import java.io.File;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
@@ -89,6 +90,8 @@ public class LauncherActivity extends Activity {
     private Paleta pal;
     private boolean noche;
     private boolean construido;
+    private boolean estabaFresco = true;
+    private long ultimoVolcado;
 
     /** El bucle de la pantalla. Se para al salir para no gastar batería en balde. */
     private final Runnable cicloEstado = new Runnable() {
@@ -96,7 +99,9 @@ public class LauncherActivity extends Activity {
             try {
                 refrescarEstado();
             } catch (Throwable t) {
-                // Una excepción aquí NO puede dejar sin interfaz a la tablet.
+                // Una excepción aquí NO puede dejar sin interfaz a la tablet... pero
+                // se cuenta: una excepción silenciada es un fallo que nadie diagnostica.
+                Diario.error("Refresco", "fallo al refrescar el estado", t);
             }
             h.postDelayed(this, MS_ESTADO);
         }
@@ -107,7 +112,7 @@ public class LauncherActivity extends Activity {
             try {
                 if (musica != null) musica.pintar(MediaSesion.leer(LauncherActivity.this));
             } catch (Throwable t) {
-                // Igual: el reproductor no puede tumbar la pantalla de inicio.
+                Diario.error("Musica", "fallo al leer el reproductor", t);
             }
             h.postDelayed(this, MS_MUSICA);
         }
@@ -117,8 +122,16 @@ public class LauncherActivity extends Activity {
     private final Runnable cicloPizarra = new Runnable() {
         @Override public void run() {
             try {
-                Pizarra.volcar(new java.io.File(getExternalFilesDir(null), "pintado.json"));
+                File dir = getExternalFilesDir(null);
+                Pizarra.volcar(new File(dir, "pintado.json"));
                 Pizarra.anota("reloj", reloj == null ? "" : reloj.getText().toString());
+                // El diario se vuelca cada 30 s: así se puede traer por SSH con el
+                // coche en marcha, sin esperar a que se apague la tablet.
+                long ahora = System.currentTimeMillis();
+                if (ahora - ultimoVolcado > 30000) {
+                    ultimoVolcado = ahora;
+                    Diario.volcar(new File(dir, "diagnosticos.txt"));
+                }
             } catch (Throwable t) {
                 // La instrumentación no puede tumbar la pantalla que instrumenta.
             }
@@ -145,6 +158,16 @@ public class LauncherActivity extends Activity {
         getWindow().setFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN,
                 WindowManager.LayoutParams.FLAG_FULLSCREEN);
         ajustes = new Ajustes(getExternalFilesDir(null));
+        Diario.cabecera(this);
+        // CRÍTICO para una instalación real: si el fichero de datos de prueba existe
+        // en la tablet, la pantalla estaría enseñando datos inventados. En producción
+        // no debe estar nunca, y si está, tiene que chillar.
+        if (ajustes.hayEstadoInyectado()) {
+            Diario.aviso("Pruebas", "HAY DATOS INYECTADOS (test_state.json): la pantalla NO "
+                    + "esta mostrando el coche, sino datos de prueba. Borrar ese fichero.");
+        } else {
+            Diario.info("Pruebas", "sin datos inyectados: se leera el coche");
+        }
 
         // El tema se decide por el alumbrado del coche; si aún no se sabe, de noche,
         // que es lo que menos deslumbra mientras llega el dato.
@@ -177,6 +200,13 @@ public class LauncherActivity extends Activity {
     @Override
     protected void onPause() {
         super.onPause();
+        // Al apagarse la tablet (el coche se apaga) se deja el diario escrito: es el
+        // último momento en que se puede contar qué pasó en este trayecto.
+        Diario.info("Ciclo", "la pantalla pasa a segundo plano (coche apagado?)");
+        try {
+            Diario.volcar(new File(getExternalFilesDir(null), "diagnosticos.txt"));
+        } catch (Throwable ignored) {
+        }
         // Sin esto, la pantalla seguiría consultando el coche y el reproductor con la
         // tablet apagada o en segundo plano.
         h.removeCallbacks(cicloEstado);
@@ -363,6 +393,10 @@ public class LauncherActivity extends Activity {
         f.addView(botonRedondo(SimboloIcono.AJUSTES, new Runnable() {
             @Override public void run() { ajustesInicio(); }
         }));
+        // Los accesos se montan AQUÍ. Estaban escritos y no se llamaban desde ningún
+        // sitio: los cinco atajos configurados no llegaron a pintarse nunca y la
+        // captura no lo delataba, porque la vista se centra en los instrumentos.
+        montarAccesos();
         return f;
     }
 
@@ -373,10 +407,23 @@ public class LauncherActivity extends Activity {
             paquetes = new ArrayList<String>();
             for (int i = 0; i < ACCESOS_POR_DEFECTO.length; i++) paquetes.add(ACCESOS_POR_DEFECTO[i]);
         }
+        int pintados = 0;
+        StringBuilder faltan = new StringBuilder();
         for (int i = 0; i < paquetes.size(); i++) {
             final String paquete = paquetes.get(i);
-            if (!Apps.existe(this, paquete)) continue;   // no se pinta lo que no está
+            if (!Apps.existe(this, paquete)) {
+                // Un acceso configurado que no está instalado es la causa número uno
+                // de "no me sale la app en el launcher". Se dice, con su paquete.
+                if (faltan.length() > 0) faltan.append(", ");
+                faltan.append(paquete);
+                continue;
+            }
             filaAccesos.addView(acceso(paquete));
+            pintados++;
+        }
+        Diario.info("Accesos", "pintados " + pintados + " de " + paquetes.size());
+        if (faltan.length() > 0) {
+            Diario.aviso("Accesos", "configurados pero NO instalados: " + faltan);
         }
     }
 
@@ -493,6 +540,17 @@ public class LauncherActivity extends Activity {
         // Los estados discretos (puertas, luces) no caducan: un aviso de puerta
         // abierta que desaparece solo seria un aviso peor que inutil.
         boolean fresco = System.currentTimeMillis() - st.updatedAt <= CADUCA_MS;
+        // El aviso más útil de todos en el coche: el dato dejó de llegar. Se registra
+        // solo al cambiar de estado, para que el diario se pueda leer de un vistazo.
+        if (fresco != estabaFresco) {
+            if (fresco) {
+                Diario.info("Datos", "el coche vuelve a dar datos");
+            } else {
+                Diario.aviso("Datos", "sin datos del coche desde hace mas de "
+                        + (CADUCA_MS / 1000) + " s: los instrumentos pasan a desconocido");
+            }
+            estabaFresco = fresco;
+        }
 
         insVel.valor(fresco ? st.speedKmh : null);
         insTemp.valor(fresco ? st.coolantC : null);
@@ -593,6 +651,9 @@ public class LauncherActivity extends Activity {
         // solo ve los cambios no puede distinguir "correcto" de "no se ejecuto".
         Pizarra.anota("tema", quiereNoche ? "noche" : "dia");
         if (quiereNoche == noche && construido) return;
+        Diario.info("Tema", "cambio a " + (quiereNoche ? "noche" : "dia")
+                + " (alumbrado " + (Boolean.TRUE.equals(st.lightsOn) ? "encendido" : "apagado")
+                + ", tema configurado: " + fijado + ")");
         noche = quiereNoche;
         pal = Paleta.de(noche);
 
@@ -628,6 +689,7 @@ public class LauncherActivity extends Activity {
 
     private void abrirCajon() {
         if (cajon == null) return;
+        Diario.info("Cajon", "abriendo la lista de aplicaciones");
         cajon.cargar();
         cajon.setVisibility(View.VISIBLE);
         cajon.bringToFront();

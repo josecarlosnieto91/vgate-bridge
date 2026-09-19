@@ -56,8 +56,12 @@ final class MediaSesion {
         MediaController mc = activo(ctx);
         if (mc == null) {
             // Distinguir "no hay permiso" de "no hay nada sonando" importa: son dos
-            // problemas distintos y se arreglan de forma distinta.
+            // problemas distintos y se arreglan de forma distinta. Y se registra,
+            // porque el permiso de notificaciones es el fallo mudo más habitual:
+            // sin él, la zona de música se queda sin datos y parece una avería.
             info.permiso = permisoConcedido(ctx);
+            if (!info.permiso) Diario.aviso("Musica", "sin permiso de notificaciones: "
+                    + "no se puede leer el reproductor (se concede en Ajustes > Notificaciones)");
             return info;
         }
 
@@ -127,6 +131,7 @@ final class MediaSesion {
         } catch (SecurityException e) {
             return null;                 // sin permiso de notificaciones
         } catch (Throwable t) {
+            Diario.error("Musica", "fallo consultando las sesiones de audio", t);
             return null;
         }
     }

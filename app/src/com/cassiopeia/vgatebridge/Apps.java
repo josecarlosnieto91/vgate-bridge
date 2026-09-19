@@ -70,14 +70,16 @@ final class Apps {
                 Drawable icono = null;
                 try {
                     icono = ri.loadIcon(pm);
-                } catch (Throwable ignored) {
-                    // Un icono que no carga no puede dejar la lista sin esa app:
-                    // saldrá con el hueco, que se ve y no molesta.
+                } catch (Throwable t) {
+                    // Un icono que no carga no puede dejar la lista sin esa app: saldrá
+                    // con el hueco. Pero se cuenta, porque es un síntoma de algo peor.
+                    Diario.aviso("Aplicaciones", "sin icono para " + paquete + ": " + t);
                 }
                 porPaquete.put(paquete, new App(etiqueta, paquete, icono));
             }
 
             salida.addAll(porPaquete.values());
+            Diario.info("Aplicaciones", "instaladas y lanzables: " + salida.size());
             final Collator cotejador = Collator.getInstance(new Locale("es", "ES"));
             Collections.sort(salida, new Comparator<App>() {
                 @Override
@@ -107,11 +109,17 @@ final class Apps {
     static boolean abrir(Context ctx, String paquete) {
         try {
             Intent i = ctx.getPackageManager().getLaunchIntentForPackage(paquete);
-            if (i == null) return false;
+            if (i == null) {
+                Diario.aviso("Aplicaciones", "no se puede abrir " + paquete
+                        + ": no tiene pantalla de inicio (¿desinstalada?)");
+                return false;
+            }
             i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
             ctx.startActivity(i);
+            Diario.info("Aplicaciones", "abierta " + paquete);
             return true;
         } catch (Throwable t) {
+            Diario.error("Aplicaciones", "fallo al abrir " + paquete, t);
             return false;
         }
     }

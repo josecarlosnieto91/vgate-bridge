@@ -106,6 +106,27 @@ grep -q "KEEP_SCREEN_ON" "$SRC/LauncherActivity.java" && ok "la pantalla no se a
 grep -q "hayEstadoInyectado" "$SRC/Ajustes.java" && ok "los datos de prueba solo entran si existe su fichero" \
     || bad "la inyección de pruebas no está condicionada"
 
+echo "── Diario: que se pueda diagnosticar sin estar delante ──"
+grep -q "Diario.java" /dev/null; [ -f "$SRC/Diario.java" ] && ok "existe el diario de la app" || bad "sin diario"
+grep -q "diagnosticos.txt" "$SRC/LauncherActivity.java" && ok "el diario se vuelca a fichero (sobrevive al apagón)" \
+    || bad "el diario solo va a logcat: se pierde al apagar la tablet"
+grep -q "test_state.json" "$SRC/LauncherActivity.java" && grep -q "HAY DATOS INYECTADOS" "$SRC/LauncherActivity.java" \
+    && ok "avisa si hay datos de prueba inyectados en una instalación real" \
+    || bad "no avisa de datos inyectados: la pantalla podría mostrar datos falsos sin decirlo"
+grep -q "sin datos del coche desde hace" "$SRC/LauncherActivity.java" \
+    && ok "registra cuándo el coche deja de dar datos" || bad "no se registra la pérdida de datos"
+grep -q "Diario.cabecera" "$SRC/LauncherActivity.java" \
+    && ok "el diario empieza diciendo versión, aparato y Android" || bad "sin cabecera de instalación"
+grep -q "Diario.error" "$SRC/LauncherActivity.java" && ok "las excepciones silenciadas se cuentan igual" \
+    || bad "las excepciones se tragan sin dejar rastro"
+
+echo "── Que lo escrito se use (una función sin llamar no hace nada) ──"
+# montarAccesos() estaba definida y no se llamaba desde ningún sitio: los accesos
+# directos no se pintaron nunca y la captura no lo delataba. Ahora se cuenta.
+n=$(grep -c "montarAccesos" "$SRC/LauncherActivity.java")
+[ "$n" -ge 2 ] && ok "los accesos directos se montan de verdad (definición + llamada)" \
+    || bad "montarAccesos solo aparece $n vez(es): definida pero SIN LLAMAR"
+
 echo "── Matices del empaquetado ──"
 grep -q "A assets" "$APP/build.sh" && bad "build.sh sigue empaquetando assets que ya no existen" \
     || ok "build.sh no empaqueta assets"
