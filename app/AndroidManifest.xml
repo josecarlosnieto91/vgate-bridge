@@ -58,6 +58,10 @@
             android:label="Diagnostico del coche"
             android:excludeFromRecents="true"
             android:launchMode="singleTop" />
+        <activity android:name=".ViajeActivity"
+            android:label="Ordenador de viaje"
+            android:excludeFromRecents="true"
+            android:launchMode="singleTop" />
         <activity
             android:name=".LauncherActivity"
             android:exported="true"

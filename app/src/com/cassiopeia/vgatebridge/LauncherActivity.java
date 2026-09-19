@@ -166,6 +166,8 @@ public class LauncherActivity extends Activity {
                 WindowManager.LayoutParams.FLAG_FULLSCREEN);
         ajustes = new Ajustes(getExternalFilesDir(null));
         Diario.cabecera(this);
+        // El ordenador de viaje recupera lo que sobrevivió al apagón anterior.
+        Viajes.INSTANCIA.cargar(getExternalFilesDir(null));
         // CRÍTICO para una instalación real: si el fichero de datos de prueba existe
         // en la tablet, la pantalla estaría enseñando datos inventados. En producción
         // no debe estar nunca, y si está, tiene que chillar.
@@ -212,6 +214,9 @@ public class LauncherActivity extends Activity {
         Diario.info("Ciclo", "la pantalla pasa a segundo plano (coche apagado?)");
         try {
             Diario.volcar(new File(getExternalFilesDir(null), "diagnosticos.txt"));
+            // El dia y el total se guardan aqui: es el ultimo momento antes de que el
+            // coche corte la corriente.
+            Viajes.INSTANCIA.guardar(getExternalFilesDir(null));
         } catch (Throwable ignored) {
         }
         // Sin esto, la pantalla seguiría consultando el coche y el reproductor con la
@@ -324,6 +329,20 @@ public class LauncherActivity extends Activity {
 
         datoConsumo = dato(tira, "Consumo");
         datoExt = dato(tira, "Exterior");
+        // La tira de datos abre el ordenador de viaje: es el resumen de telemetría, así
+        // que tocar ahí para ver el detalle es lo que uno espera. No gana un botón más
+        // la pantalla principal, que es justo lo que no queremos.
+        tira.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) {
+                Diario.info("Viaje", "abriendo el ordenador de viaje desde la tira de datos");
+                try {
+                    startActivity(new Intent(LauncherActivity.this, ViajeActivity.class)
+                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+                } catch (Throwable t) {
+                    Diario.error("Viaje", "no se pudo abrir el ordenador de viaje", t);
+                }
+            }
+        });
         tira.addView(new View(this), new LinearLayout.LayoutParams(0,
                 ViewGroup.LayoutParams.MATCH_PARENT, 1f));
 
@@ -603,6 +622,14 @@ public class LauncherActivity extends Activity {
 
         barraComb.nivel(fresco ? st.fuelLevelPct : null);
         barraComb.secundario(fresco ? st.rangeKm : null);
+
+        // El ordenador de viaje se alimenta de la misma muestra, y solo con datos
+        // frescos: un valor congelado no puede contar kilómetros que no se han hecho.
+        Viajes.INSTANCIA.muestra(System.currentTimeMillis(),
+                fresco ? st.speedKmh : null,
+                fresco ? st.rpm : null,
+                fresco ? st.consumptionL100 : null,
+                fresco ? st.coolantC : null);
 
         consumo(fresco ? st.consumptionL100 : null);
         exterior(fresco ? st.outsideTempC : null);
