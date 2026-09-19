@@ -8,13 +8,35 @@
 </head>
 <body class="noche">
 
-  <!-- ── PRIMERA FILA: lo que miras de reojo mientras conduces ──────────────
-       La velocidad manda: es el único dato que se lee a un metro de distancia.
-       Si el dato no está, se muestra "—" y NUNCA 0: un velocímetro mintiendo
-       un cero es peor que no tener velocímetro. -->
   <main class="panel">
 
-    <section class="velocidad">
+    <!-- RELOJ: lo que más se mira de reojo en un salpicadero. Hora y fecha
+         locales, sin red. Se refresca por minuto (no cada segundo: en un SoC
+         flojo no compensa y nadie necesita ver correr los segundos). -->
+    <section class="zona reloj">
+      <b id="reloj-hora">--:--</b>
+      <span id="reloj-fecha"></span>
+    </section>
+
+    <!-- MÚSICA: canción y controles. Tres estados, y los tres se ven:
+         reproduciendo, nada sonando (la zona se pliega) y sin permiso (aviso con
+         enlace para concederlo). Un hueco vacío y mudo es peor que un aviso. -->
+    <section class="zona musica" id="m-zona">
+      <div class="m-pista">
+        <b id="m-titulo">—</b>
+        <span id="m-artista"></span>
+      </div>
+      <div class="m-controles" id="m-controles">
+        <button id="m-prev" aria-label="Anterior"><svg viewBox="0 0 24 24"><path d="M6 5v14M19 5l-11 7 11 7z"/></svg></button>
+        <button id="m-play" aria-label="Reproducir o pausar"><svg viewBox="0 0 24 24" id="m-play-icono"><path d="M7 4l13 8-13 8z"/></svg></button>
+        <button id="m-next" aria-label="Siguiente"><svg viewBox="0 0 24 24"><path d="M18 5v14M5 5l11 7-11 7z"/></svg></button>
+      </div>
+      <p class="m-aviso" id="m-aviso"></p>
+    </section>
+
+    <!-- VELOCIDAD: manda. Si no hay dato, guion pequeño y se dice por qué —
+         nunca un cero, que sería una mentira peligrosa. -->
+    <section class="zona velocidad">
       <div class="aguja">
         <span id="vel-valor">—</span>
         <span class="unidad">km/h</span>
@@ -22,53 +44,41 @@
       <div class="aviso" id="vel-aviso"></div>
     </section>
 
-    <section class="datos">
-      <div class="dato">
-        <span class="etiqueta">Consumo</span>
-        <span class="valor"><b id="d-consumo">—</b><i>l/100 km</i></span>
-      </div>
-      <div class="dato">
-        <span class="etiqueta">Autonomía</span>
-        <span class="valor"><b id="d-rango">—</b><i>km</i></span>
-      </div>
-      <div class="dato">
-        <span class="etiqueta">Exterior</span>
-        <span class="valor"><b id="d-ext">—</b><i>°C</i></span>
-      </div>
-      <div class="dato">
-        <span class="etiqueta">Motor</span>
-        <span class="valor"><b id="d-motor">—</b><i>°C</i></span>
-      </div>
-      <div class="dato">
-        <span class="etiqueta">Régimen</span>
-        <span class="valor"><b id="d-rpm">—</b><i>rpm</i></span>
-      </div>
-      <div class="dato">
-        <span class="etiqueta">Combustible</span>
-        <span class="valor"><b id="d-fuel">—</b><i>%</i></span>
-      </div>
-    </section>
+    <!-- DATOS: arriba los cuatro que se entienden sin pensar; debajo una tira
+         fina con los de técnico (régimen, combustible) y los testigos. -->
+    <section class="zona datos">
+      <div class="dato"><span class="etiqueta">Consumo</span>
+        <span class="valor"><b id="d-consumo">—</b><i>l/100</i></span></div>
+      <div class="dato"><span class="etiqueta">Autonomía</span>
+        <span class="valor"><b id="d-rango">—</b><i>km</i></span></div>
+      <div class="dato"><span class="etiqueta">Exterior</span>
+        <span class="valor"><b id="d-ext">—</b><i>°C</i></span></div>
+      <div class="dato"><span class="etiqueta">Motor</span>
+        <span class="valor"><b id="d-motor">—</b><i>°C</i></span></div>
 
-    <!-- Testigos: puertas y alumbrado. Son DEL COCHE (CAN), no estimaciones. -->
-    <section class="testigos">
-      <div class="testigo" id="t-puertas">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h9l5 5v11H4z"/><path d="M13 4v5h5"/><circle cx="9" cy="14" r="1"/></svg>
-        <span>Puertas</span>
-      </div>
-      <div class="testigo" id="t-luces">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12h6l4-5v10l-4-5H3z"/><path d="M16 8l4-3M16 12h5M16 16l4 3"/></svg>
-        <span>Alumbrado</span>
+      <div class="tira">
+        <span class="tira-item"><em>régimen</em><b id="d-rpm">—</b></span>
+        <span class="tira-item"><em>combustible</em><b id="d-fuel">—</b></span>
+        <span class="tira-item" id="t-puertas">
+          <svg viewBox="0 0 24 24"><path d="M4 4h9l5 5v11H4z"/><path d="M13 4v5h5"/></svg>
+          <b id="t-puertas-texto">puertas</b>
+        </span>
+        <span class="tira-item" id="t-luces">
+          <svg viewBox="0 0 24 24"><path d="M3 12h6l4-5v10l-4-5H3z"/><path d="M16 8l4-3M16 12h5M16 16l4 3"/></svg>
+          <b id="t-luces-texto">alumbrado</b>
+        </span>
       </div>
     </section>
   </main>
 
-  <!-- ── SEGUNDA FILA: los accesos. Paquetes reales comprobados en la tablet;
-       editables desde launcher.json sin tocar el APK. -->
+  <!-- ACCESOS: la fila de apps. Paquetes reales comprobados en la tablet,
+       editables desde launcher.json sin recompilar. -->
   <footer class="accesos" id="accesos"></footer>
 
-  <!-- Salida de emergencia: si algo va mal, hay que poder volver al launcher de
-       la ROM. Discreto pero siempre accesible. -->
-  <button class="ajustes" id="btn-ajustes" title="Ajustes del sistema">⚙</button>
+  <!-- Salida de emergencia: volver al launcher de la ROM siempre a un toque. -->
+  <button class="ajustes" id="btn-ajustes" title="Ajustes del sistema">
+    <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M19 5l-2 2M7 17l-2 2"/></svg>
+  </button>
 
   <script src="launcher.js"></script>
 </body>

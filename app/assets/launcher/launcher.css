@@ -1,12 +1,19 @@
-/* Pantalla de inicio de Polar Star.
-   Reglas que vienen de cómo se usa esto: se mira de reojo, a pleno sol o de noche,
-   en una pantalla de 7" a un metro. Por eso: números enormes, contraste alto, sin
-   adornos y SIN ANIMACIONES (el UIS8581A es un SoC flojo; una transición de más
-   se nota en el refresco del velocímetro).
+/* Pantalla de inicio de Polar Star — rediseño del 2026-09-19.
 
-   Tema: noche/día. En modo "auto" lo decide el alumbrado del coche (CAN 1281/56),
-   que es mejor que la hora: con niebla a mediodía llevas las luces encendidas y
-   quieres el panel oscuro. */
+   Criterio: sobrio. Se mira de reojo, a pleno sol o de noche, en una pantalla de
+   7 pulgadas a un metro. Por eso: mucho aire, jerarquía clara, superficies
+   apenas insinuadas (un tono por encima del fondo y un borde de una décima de
+   blanco) y UN solo color de acento. Nada de texturas, brillos ni adornos.
+
+   SIN ANIMACIONES (transiciones de color, como mucho): el UIS8581A es un SoC
+   flojo y cada transición se nota en el refresco del velocímetro.
+
+   Tema noche/día: en automático lo decide el ALUMBRADO del coche (CAN 1281/56),
+   no la hora — con niebla a mediodía llevas luces y quieres el panel oscuro.
+
+   ⚠️ COMPATIBILIDAD: el WebView de Android 10 es Chromium 74 y NO soporta `gap`
+   en contenedores FLEX (llegó en el 84). Los `gap` de GRID sí funcionan (desde
+   el 57). Por eso aquí se usa grid con gap y, donde hay flex, márgenes. */
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
@@ -15,140 +22,222 @@ html, body {
   overflow: hidden;                 /* nada de scroll en un salpicadero */
   font-family: system-ui, "Roboto", sans-serif;
   -webkit-user-select: none; user-select: none;
-  background: #000;
-  color: #fff;
 }
 
 body {
   display: flex; flex-direction: column;
   padding: 2vh 2vw;
-  /* gap de flex NO existe en Chromium 74 (el WebView de Android 10): se usa
-     margen en el hijo, que funciona en cualquier version. Medido en emulador. */
-  transition: background .3s, color .3s;
+  transition: background .25s, color .25s;
 }
 
-/* ── Tema noche (por defecto) ─────────────────────────────────────────────── */
-body.noche { background: #06080c; color: #eef2f6; }
-body.noche .dato, body.noche .testigo { background: #11161d; }
-/* Contraste de las etiquetas: subido tras la revisión visual del 2026-09-19.
-   #7d8b9a sobre #11161d se leía mal a un metro; ahora se separa más. */
-body.noche .etiqueta { color: #9fb0c0; }
-body.noche .dato .valor b { color: #fff; }
+/* ── Paleta ──────────────────────────────────────────────────────────────── */
+body.noche {
+  background: #090c11;
+  background-image: radial-gradient(120% 90% at 20% 0%, #121821 0%, #090c11 60%);
+  color: #eaf0f7;
+  --sup: #141a23;
+  --borde: rgba(255, 255, 255, .055);
+  --sup2: #1b232e;
+  --etiqueta: #8b9aab;
+  --sec: #98a7b8;
+  --apagado: #4c5866;
+}
+body.dia {
+  background: #e9edf1;
+  background-image: radial-gradient(120% 90% at 20% 0%, #ffffff 0%, #e9edf1 60%);
+  color: #0d141b;
+  --sup: #ffffff;
+  --borde: rgba(13, 20, 27, .07);
+  --sup2: #f2f5f8;
+  --etiqueta: #5d6b7a;
+  --sec: #5d6b7a;
+  --apagado: #9aa7b4;
+}
 
-/* ── Tema día ─────────────────────────────────────────────────────────────── */
-body.dia { background: #eef1f4; color: #10161d; }
-body.dia .dato, body.dia .testigo { background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.12); }
-body.dia .etiqueta { color: #5b6875; }
-body.dia .dato .valor b { color: #0a0f14; }
-/* En tema claro, las unidades en gris muy claro no se leen (revisión visual).
-   En día van oscuras; el gris claro queda solo para el tema noche. */
-body.dia .dato .valor i, body.dia .unidad { color: #5b6875; }
-body.dia .accesos button { background: #fff; color: #10161d; box-shadow: 0 1px 3px rgba(0,0,0,.15); }
-body.dia .ajustes { background: #fff; color: #10161d; }
-
+/* ── Rejilla principal ───────────────────────────────────────────────────── */
 .panel {
   flex: 1;
-  margin-bottom: 2vh;
+  margin-bottom: 1.6vh;
   display: grid;
-  grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
-  grid-template-rows: 1fr auto;
+  grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
   grid-template-areas:
-    "velocidad datos"
-    "testigos  datos";
-  gap: 2vh 2vw;
+    "reloj    musica"
+    "velocidad datos";
+  gap: 1.6vh 1.6vw;
   min-height: 0;
 }
 
-/* ── Velocidad: el dato principal ─────────────────────────────────────────── */
+.zona {
+  background: var(--sup);
+  border: 1px solid var(--borde);
+  border-radius: 2vh;
+  min-width: 0;
+  min-height: 0;
+}
+
+/* ── Reloj ───────────────────────────────────────────────────────────────── */
+.reloj {
+  grid-area: reloj;
+  display: flex; flex-direction: column; justify-content: center;
+  padding: 1.6vh 1.8vw;
+}
+#reloj-hora {
+  font-size: 6.6vh; line-height: 1; font-weight: 650;
+  font-variant-numeric: tabular-nums; letter-spacing: -.01em;
+}
+#reloj-fecha {
+  font-size: 2vh; color: var(--sec); margin-top: .7vh;
+  text-transform: capitalize; letter-spacing: .02em;
+}
+
+/* ── Música ──────────────────────────────────────────────────────────────── */
+.musica {
+  grid-area: musica;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: 1fr auto;
+  grid-template-areas:
+    "pista    controles"
+    "aviso    aviso";
+  align-items: center;
+  padding: 1.6vh 1.6vw;
+  gap: .6vh 1vw;
+}
+/* Sin canción ni permiso: la zona se pliega para no ocupar sitio en balde. */
+.musica.plegada { grid-template-rows: 1fr 0; }
+.musica.plegada .m-controles { display: none; }
+
+.m-pista { grid-area: pista; display: flex; flex-direction: column; min-width: 0; }
+#m-titulo {
+  font-size: 2.5vh; font-weight: 600; line-height: 1.2;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+#m-artista {
+  font-size: 1.9vh; color: var(--sec); margin-top: .4vh;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.m-controles { grid-area: controles; display: flex; align-items: center; }
+.m-controles button {
+  width: 6vh; height: 6vh;
+  margin-left: .7vw;
+  border: 1px solid var(--borde); border-radius: 50%;
+  background: var(--sup2); color: inherit;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer;
+}
+.m-controles button:active { background: var(--apagado); }
+.m-controles svg { width: 2.6vh; height: 2.6vh; fill: none; stroke: currentColor; stroke-width: 1.7; }
+#m-play svg { fill: currentColor; stroke-width: 1; }
+.m-aviso {
+  grid-area: aviso; font-size: 1.7vh; color: var(--etiqueta);
+  min-height: 0; line-height: 1.3;
+}
+.m-aviso.enlace { color: #ffab00; }
+
+/* ── Velocidad ───────────────────────────────────────────────────────────── */
 .velocidad {
   grid-area: velocidad;
   display: flex; flex-direction: column;
   align-items: center; justify-content: center;
-  min-height: 0;
+  padding: 1vh;
 }
 .aguja { display: flex; align-items: baseline; }
 .aguja .unidad { margin-left: 1.2vw; }
 #vel-valor {
-  font-size: 21vh; line-height: .86; font-weight: 700;
-  font-variant-numeric: tabular-nums;   /* los dígitos no bailan al cambiar */
-  letter-spacing: -.02em;
+  font-size: 24vh; line-height: .84; font-weight: 680;
+  font-variant-numeric: tabular-nums; letter-spacing: -.03em;
 }
-.unidad { font-size: 4.4vh; color: #9fb0c0; font-weight: 500; }
-.aviso { font-size: 2.2vh; color: #ffab00; min-height: 2.6vh; margin-top: 1vh; }
+.unidad { font-size: 4.2vh; color: var(--sec); font-weight: 500; }
+.aviso { font-size: 2.1vh; color: #ffab00; min-height: 2.6vh; margin-top: .8vh; }
 
-/* Sin dato: NO se pinta un cero ni un guion enorme (un guion a 21vh se lee como
-   una barra suelta, no como "no hay dato"). Se reduce y se apaga, y el aviso de
-   encima dice qué pasa. Revisión visual del 2026-09-19: el guion a tamaño completo
-   parecía un elemento roto. */
-#vel-valor.sin-dato { color: #46505c; font-size: 9vh; }
+/* Sin dato: NO un cero ni un guion gigante (un guion a 24vh se lee como una barra
+   rota). Se reduce, se apaga y el aviso dice qué pasa. */
+#vel-valor.sin-dato { color: var(--apagado); font-size: 10vh; }
 
-/* ── Banda de datos ──────────────────────────────────────────────────────── */
+/* ── Datos ───────────────────────────────────────────────────────────────── */
 .datos {
   grid-area: datos;
+  padding: 1.4vh 1.2vw;
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 1.6vh 1.6vw;
+  grid-template-rows: 1fr 1fr auto;
+  gap: 1.2vh 1vw;
   min-height: 0;
 }
 .dato {
   display: flex; flex-direction: column; justify-content: center;
-  padding: 1.4vh 1.6vw;
-  border-radius: 1.2vh;
-  min-width: 0;
+  min-width: 0; padding-left: 1vw;
+  border-left: 2px solid var(--borde);
 }
 .etiqueta {
-  font-size: 1.8vh; text-transform: uppercase; letter-spacing: .08em;
-  margin-bottom: .5vh; font-weight: 600;
+  font-size: 1.7vh; text-transform: uppercase; letter-spacing: .1em;
+  color: var(--etiqueta); font-weight: 600; margin-bottom: .4vh;
 }
 .dato .valor { display: flex; align-items: baseline; }
-.dato .valor i { margin-left: .5vw; }
-.dato .valor b { font-size: 5.4vh; font-weight: 600; font-variant-numeric: tabular-nums; }
-.dato .valor i { font-size: 2vh; font-style: normal; color: #9fb0c0; }
-
-/* ── Testigos ────────────────────────────────────────────────────────────── */
-.testigos { grid-area: testigos; display: grid; grid-template-columns: 1fr 1fr; gap: 1.6vw; }
-.testigo {
-  display: flex; align-items: center; justify-content: center;
-  border-radius: 1.2vh; padding: 1.2vh 1vw;
-  color: #5b6875;                       /* apagado = en reposo */
+.dato .valor b {
+  font-size: 5.2vh; font-weight: 620; line-height: 1;
+  font-variant-numeric: tabular-nums;
 }
-.testigo svg { width: 3.4vh; height: 3.4vh; fill: none; stroke: currentColor; stroke-width: 1.7; }
-.testigo span { margin-left: 1vw; }
-.testigo span { font-size: 2vh; }
-/* Encendido (puerta abierta / luces puestas): se ve de un vistazo. */
-.testigo.activo { color: #ffab00; background: rgba(255,171,0,.14); font-weight: 600; }
-.testigo.desconocido { opacity: .45; }
+.dato .valor i { font-size: 1.9vh; font-style: normal; color: var(--sec); margin-left: .4vw; }
 
-/* ── Accesos a apps ──────────────────────────────────────────────────────── */
+/* Tira de datos de técnico y testigos: discreta, en una sola línea. */
+.tira {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr) repeat(2, minmax(0, .9fr));
+  gap: .8vw;
+  padding-top: 1.1vh;
+  border-top: 1px solid var(--borde);
+  align-items: center;
+}
+.tira-item { display: flex; align-items: baseline; min-width: 0; }
+.tira-item em {
+  font-style: normal; font-size: 1.6vh; color: var(--etiqueta);
+  text-transform: lowercase; letter-spacing: .04em;
+}
+.tira-item b {
+  font-size: 2.3vh; font-weight: 600; margin-left: .5vw;
+  font-variant-numeric: tabular-nums;
+}
+.tira-item svg {
+  width: 2.6vh; height: 2.6vh; fill: none; stroke: currentColor;
+  stroke-width: 1.7; color: var(--apagado); align-self: center;
+}
+.tira-item.activo svg { color: #ffab00; }
+.tira-item.activo b { color: #ffab00; }
+.tira-item.desconocido { opacity: .45; }
+
+/* ── Accesos ─────────────────────────────────────────────────────────────── */
 .accesos {
   display: grid;
   grid-auto-flow: column;
-  /* minmax(0,1fr): sin el 0, el contenido impone su ancho mínimo y el último botón
-     se sale de la pantalla (revisión visual del 2026-09-19: "Android Auto" salía
-     cortado). Con esto los cinco se reparten el ancho y encogen si hace falta. */
-  grid-auto-columns: minmax(0, 1fr);
-  gap: 1.4vw;
-  padding-right: 8.5vh;                 /* hueco para el botón de ajustes */
+  grid-auto-columns: minmax(0, 1fr);   /* sin el 0, el último botón se sale */
+  gap: 1.2vw;
+  padding-right: 8vh;                  /* hueco para el botón de ajustes */
 }
 .accesos button {
   display: flex; flex-direction: column; align-items: center; justify-content: center;
-  min-width: 0;
-  padding: 1.8vh .6vw;
-  border: 0; border-radius: 1.6vh;
-  background: #11161d; color: #eef2f6;
+  min-width: 0; padding: 1.5vh .6vw;
+  border: 1px solid var(--borde); border-radius: 1.8vh;
+  background: var(--sup); color: inherit;
   font-family: inherit; font-size: 1.8vh; font-weight: 600; line-height: 1.15;
   text-align: center; white-space: normal; overflow-wrap: anywhere;
   cursor: pointer;
 }
-.accesos button:active { background: #1b2430; }
-.accesos svg { width: 4.4vh; height: 4.4vh; fill: none; stroke: currentColor; stroke-width: 1.6; flex: none; }
-.accesos button span { margin-top: .6vh; }
-.accesos .no-disponible { opacity: .35; }
+.accesos button:active { background: var(--sup2); }
+.accesos svg {
+  width: 4.2vh; height: 4.2vh; flex: none;
+  fill: none; stroke: currentColor; stroke-width: 1.6; color: var(--sec);
+}
+.accesos button span { margin-top: .5vh; }
+.accesos .no-disponible { opacity: .4; }
 
-/* ── Botón de ajustes (salida de emergencia) ─────────────────────────────── */
+/* ── Ajustes (salida de emergencia) ──────────────────────────────────────── */
 .ajustes {
   position: fixed; right: 1.2vw; bottom: 2vh;
   width: 6vh; height: 6vh; border-radius: 50%;
-  border: 0; background: #11161d; color: #7d8b9a;
-  font-size: 3vh; cursor: pointer;
+  border: 1px solid var(--borde); background: var(--sup); color: var(--etiqueta);
+  display: flex; align-items: center; justify-content: center; cursor: pointer;
 }
+.ajustes svg { width: 3vh; height: 3vh; fill: none; stroke: currentColor; stroke-width: 1.6; }

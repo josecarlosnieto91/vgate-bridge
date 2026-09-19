@@ -121,7 +121,106 @@ public class WebBridge {
         }
     }
 
+    /**
+     * Qué está sonando ahora mismo, en JSON: {titulo, artista, sonando}.
+     *
+     * Si el permiso de acceso a notificaciones no está concedido, Android lanza
+     * SecurityException: se devuelve {"permiso":false} y la pantalla muestra el
+     * aviso con el enlace para concederlo. Es un estado explícito, no un silencio.
+     *
+     * Igual que el estado del coche, admite inyección para pruebas
+     * (test_media.json), que es lo único que permite probar esto en un emulador sin
+     * Spotify instalado.
+     */
+    @android.webkit.JavascriptInterface
+    public String media() {
+        String inyectado = leerFicheroDePrueba("test_media.json");
+        if (inyectado != null) return inyectado;
+        try {
+            android.media.session.MediaSessionManager msm =
+                    (android.media.session.MediaSessionManager) actividad.getSystemService(
+                            android.content.Context.MEDIA_SESSION_SERVICE);
+            if (msm == null) return "{\"permiso\":false}";
+            java.util.List<android.media.session.MediaController> sesiones =
+                    msm.getActiveSessions(new android.content.ComponentName(actividad, MediaListener.class));
+            if (sesiones == null || sesiones.isEmpty()) return "{\"permiso\":true,\"titulo\":null}";
+            // La primera activa es la que suena (o la última que sonó).
+            android.media.session.MediaController mc = sesiones.get(0);
+            android.media.MediaMetadata md = mc.getMetadata();
+            String titulo = md == null ? null : texto(md, android.media.MediaMetadata.METADATA_KEY_TITLE);
+            String artista = md == null ? null : texto(md, android.media.MediaMetadata.METADATA_KEY_ARTIST);
+            boolean sonando = mc.getPlaybackState() != null
+                    && mc.getPlaybackState().getState() == android.media.session.PlaybackState.STATE_PLAYING;
+            return "{\"permiso\":true,\"titulo\":" + json(titulo) + ",\"artista\":" + json(artista)
+                    + ",\"sonando\":" + sonando + "}";
+        } catch (SecurityException e) {
+            return "{\"permiso\":false}";          // permiso no concedido: se dice
+        } catch (Throwable t) {
+            return "{\"permiso\":true,\"titulo\":null}";
+        }
+    }
+
+    /** Controla el reproductor activo: "anterior", "siguiente" o "alternar". */
+    @android.webkit.JavascriptInterface
+    public void mediaControl(String accion) {
+        try {
+            android.media.session.MediaSessionManager msm =
+                    (android.media.session.MediaSessionManager) actividad.getSystemService(
+                            android.content.Context.MEDIA_SESSION_SERVICE);
+            if (msm == null || accion == null) return;
+            java.util.List<android.media.session.MediaController> sesiones =
+                    msm.getActiveSessions(new android.content.ComponentName(actividad, MediaListener.class));
+            if (sesiones == null || sesiones.isEmpty()) return;
+            android.media.session.MediaController.TransportControls c = sesiones.get(0).getTransportControls();
+            if ("anterior".equals(accion)) c.skipToPrevious();
+            else if ("siguiente".equals(accion)) c.skipToNext();
+            else c.play();           // "alternar" lo resuelve la pantalla según el estado
+        } catch (Throwable ignored) {
+            // Que no responda el reproductor no puede tumbar la pantalla de inicio.
+        }
+    }
+
+    /** Abre la pantalla de Ajustes donde se concede el acceso a notificaciones. */
+    @android.webkit.JavascriptInterface
+    public void ajustesNotificaciones() {
+        try {
+            Intent i = new Intent("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS");
+            i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            actividad.startActivity(i);
+        } catch (Throwable t) {
+            try {
+                Intent i = new Intent(Settings.ACTION_SETTINGS);
+                i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                actividad.startActivity(i);
+            } catch (Throwable ignored) {}
+        }
+    }
+
     // ── Lectura de ficheros locales (nunca de fuera de la app) ────────────────
+
+    /** Fichero de pruebas, o null. Solo mira dentro de la carpeta de la app. */
+    private String leerFicheroDePrueba(String nombre) {
+        try {
+            File f = new File(dirArchivos, nombre);
+            if (!f.exists()) return null;
+            return leerFichero(f);
+        } catch (Throwable t) {
+            return null;
+        }
+    }
+
+    /** Texto de un metadato, o null si no lo trae. */
+    private String texto(android.media.MediaMetadata md, String clave) {
+        CharSequence cs = md.getText(clave);
+        return cs == null ? null : cs.toString();
+    }
+
+    /** Comillas y escapado mínimos para no romper el JSON con una comilla o un salto. */
+    private String json(String v) {
+        if (v == null) return "null";
+        return "\"" + v.replace("\\", "\\\\").replace("\"", "\\\"")
+                .replace("\n", " ").replace("\r", " ") + "\"";
+    }
 
     /** Lee un campo de launcher.json sin traer una librería JSON: extrae la lista. */
     private String leerJson(String nombre, String campo) {

@@ -1,15 +1,18 @@
-/* Lógica de la pantalla de inicio.
+/* Lógica de la pantalla de inicio de Polar Star.
 
    DOS MODOS, a propósito:
-   - CON puente (en la tablet): `window.Android.estado()` devuelve el JSON del
-     estado real del coche (lo sirve la tarea 7 del plan).
-   - SIN puente (en un navegador cualquiera): se usan datos simulados y marcados
-     como tales. Así la pantalla se puede montar y revisar en Cassiopeia, sin
-     tablet y sin coche. Lo que se ve en el navegador es la pantalla de verdad,
-     no una maqueta aparte que se desincroniza.
+   - CON puente (en la tablet): `window.Android.estado()` y `window.Android.media()`
+     devuelven el JSON real (coche y reproductor).
+   - SIN puente (en un navegador cualquiera): datos simulados y marcados como
+     tales. Así la pantalla se monta y se revisa sin tablet y sin coche, y lo que
+     se ve en el navegador es LA MISMA pantalla, no una maqueta aparte que se
+     desincroniza.
 
-   Nada de ceros inventados: si un dato no llega, se pinta "—" y la velocidad se
-   muestra apagada. Es la misma regla que en LiveState.java. */
+   Regla que no se rompe: un dato que no llega se pinta "—", nunca 0. Un
+   velocímetro marcando cero cuando no sabe nada es una mentira peligrosa.
+
+   Compatibilidad: el WebView de Android 10 es Chromium 74. Nada de flechas
+   (arrow functions), plantillas de texto ni `gap` en flex. */
 
 (function () {
   'use strict';
@@ -35,32 +38,103 @@
 
   var $ = function (id) { return document.getElementById(id); };
 
+  // ── Pintar números y testigos ────────────────────────────────────────────
   function pintarNumero(el, valor, decimales) {
     if (el === null) return;
-    if (valor === null || valor === undefined) {
-      el.textContent = '—';                       // no es 0: es "no lo sé"
-      return;
-    }
+    if (valor === null || valor === undefined) { el.textContent = '—'; return; }
     el.textContent = decimales ? valor.toFixed(decimales) : Math.round(valor);
   }
 
-  function pintarTestigo(el, activo, etiqueta) {
+  function pintarTestigo(el, textoEl, activo, etiqueta) {
     if (!el) return;
     el.classList.toggle('activo', activo === true);
     el.classList.toggle('desconocido', activo === null || activo === undefined);
-    var t = el.querySelector('span');
-    if (t) t.textContent = etiqueta;
+    if (textoEl) textoEl.textContent = etiqueta;
   }
 
+  // ── Reloj ────────────────────────────────────────────────────────────────
+  // Local, sin red. Se refresca por minuto: en un SoC flojo no compensa más y
+  // nadie necesita ver correr los segundos.
+  var DIAS = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
+  var MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio',
+               'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+  function reloj() {
+    var d = new Date();
+    var hh = d.getHours(), mm = d.getMinutes();
+    var hora = (hh < 10 ? '0' : '') + hh + ':' + (mm < 10 ? '0' : '') + mm;
+    var el = $('reloj-hora'); if (el) el.textContent = hora;
+    var f = $('reloj-fecha');
+    if (f) f.textContent = DIAS[d.getDay()] + ', ' + d.getDate() + ' de ' + MESES[d.getMonth()];
+  }
+
+  // ── Música ───────────────────────────────────────────────────────────────
+  /* Tres estados, y los tres se ven:
+      1. reproduciendo        → título, artista y controles
+      2. nada sonando         → la zona se pliega (no ocupa sitio en balde)
+      3. sin permiso          → aviso con enlace para concederlo en Ajustes
+     El caso 3 es real: leer el reproductor exige "acceso a notificaciones", que se
+     concede a mano. Un bloque vacío y mudo sería lo peor. */
+  function pintarMusica(m) {
+    var zona = $('m-zona');
+    if (!zona) return;
+    var aviso = $('m-aviso');
+    var titulo = $('m-titulo'), artista = $('m-artista');
+
+    if (m && m.permiso === false) {
+      zona.classList.add('plegada');
+      titulo.textContent = 'Música';
+      artista.textContent = '';
+      aviso.textContent = 'Permite el acceso a notificaciones para ver lo que suena';
+      aviso.classList.add('enlace');
+      aviso.onclick = function () { abrirAjusteNotificaciones(); };
+      return;
+    }
+    aviso.classList.remove('enlace');
+    aviso.onclick = null;
+
+    if (!m || !m.titulo) {
+      zona.classList.add('plegada');
+      titulo.textContent = 'Sin reproducción';
+      artista.textContent = '';
+      aviso.textContent = '';
+      return;
+    }
+    zona.classList.remove('plegada');
+    titulo.textContent = m.titulo;
+    artista.textContent = m.artista || '';
+    aviso.textContent = m.sonando ? '' : 'en pausa';
+    var icono = $('m-play-icono');
+    if (icono) {
+      icono.innerHTML = m.sonando
+        ? '<path d="M8 5h3v14H8zM13 5h3v14h-3z"/>'      // pausa
+        : '<path d="M7 4l13 8-13 8z"/>';                // play
+    }
+  }
+
+  function abrirAjusteNotificaciones() {
+    if (window.Android && typeof window.Android.ajustesNotificaciones === 'function') {
+      window.Android.ajustesNotificaciones();
+    } else {
+      alert('Ajustes → Acceso a notificaciones: actívalo para VgateBridge.');
+    }
+  }
+
+  function control(accion) {
+    if (window.Android && typeof window.Android.mediaControl === 'function') {
+      window.Android.mediaControl(accion);
+    }
+  }
+
+  // ── Estado del coche ─────────────────────────────────────────────────────
   function pintar(estado, simulado) {
     var v = estado.speed;
     var vel = $('vel-valor');
     pintarNumero(vel, v, 0);
     vel.classList.toggle('sin-dato', v === null || v === undefined);
-    $('vel-aviso').textContent = (v !== null && v > 120) ? 'Velocidad alta' : '';
-    if (simulado) $('vel-aviso').textContent = 'datos simulados (sin puente)';
-    // Sin velocidad: se dice por qué, en vez de dejar un guion mudo.
-    if (v === null || v === undefined) $('vel-aviso').textContent = 'sin datos del motor';
+    var av = $('vel-aviso');
+    av.textContent = (v !== null && v !== undefined && v > 120) ? 'Velocidad alta' : '';
+    if (simulado) av.textContent = 'datos simulados (sin puente)';
+    if (v === null || v === undefined) av.textContent = 'sin datos del motor';
 
     pintarNumero($('d-consumo'), estado.consumption, 1);
     pintarNumero($('d-rango'), estado.range, 0);
@@ -69,14 +143,16 @@
     pintarNumero($('d-rpm'), estado.rpm, 0);
     pintarNumero($('d-fuel'), estado.fuel, 0);
 
-    pintarTestigo($('t-puertas'), estado.doorOpen, estado.doorOpen ? 'Puerta abierta' : 'Puertas');
-    pintarTestigo($('t-luces'), estado.lightsOn, estado.lightsOn ? 'Luces puestas' : 'Alumbrado');
+    pintarTestigo($('t-puertas'), $('t-puertas-texto'), estado.doorOpen,
+                  estado.doorOpen ? 'puerta abierta' : 'puertas');
+    pintarTestigo($('t-luces'), $('t-luces-texto'), estado.lightsOn,
+                  estado.lightsOn ? 'luces puestas' : 'alumbrado');
 
     tema(estado);
   }
 
-  /* Tema: en automático lo decide el ALUMBRADO del coche (dato del CAN), no la
-     hora. Si no hay dato de luces, se cae a la hora como respaldo. */
+  /* Tema: en automático lo decide el ALUMBRADO (dato del CAN), no la hora. Con
+     niebla a mediodía llevas luces y quieres el panel oscuro. */
   function tema(estado) {
     var modo = (window.Android && window.Android.tema) ? window.Android.tema() : 'auto';
     if (modo === 'dia' || modo === 'noche') { aplicar(modo); return; }
@@ -93,6 +169,7 @@
     b.classList.add(clase);
   }
 
+  // ── Accesos ──────────────────────────────────────────────────────────────
   function montarAccesos() {
     var caja = $('accesos');
     if (!caja) return;
@@ -101,19 +178,17 @@
       try {
         var crudo = window.Android.accesos();
         if (crudo) lista = JSON.parse(crudo);
-      } catch (e) { /* si el fichero de config está roto, se usan los de fábrica */ }
+      } catch (e) { /* config rota: se usan los de fábrica, nunca se queda vacío */ }
     }
     caja.innerHTML = '';
     lista.forEach(function (app) {
       var b = document.createElement('button');
       // innerHTML SOLO con las constantes de ICONOS (SVG dibujado aquí dentro):
-      // no entra ningún dato de fuera. El nombre de la app, que sí puede venir del
-      // fichero de config, se pinta con textContent justo debajo. No hay inyección
-      // posible; se deja así por claridad, no por descuido.
+      // no entra ningún dato de fuera. El nombre, que sí puede venir del fichero
+      // de config, se pinta con textContent justo debajo. No hay inyección.
       b.innerHTML = '<svg viewBox="0 0 24 24">' + (ICONOS[app.icono] || ICONOS.mapa) + '</svg>'
                   + '<span></span>';
       b.querySelector('span').textContent = app.nombre;
-      // En el navegador no hay apps que abrir: se desactiva en vez de fingir.
       if (!hayPuente) b.classList.add('no-disponible');
       b.addEventListener('click', function () {
         if (window.Android && typeof window.Android.abrirApp === 'function') {
@@ -130,13 +205,18 @@
       if (window.Android && typeof window.Android.ajustesInicio === 'function') {
         window.Android.ajustesInicio();
       } else {
-        alert('Desde aquí se abre Ajustes → Aplicación de inicio para volver al launcher de la ROM.');
+        alert('Ajustes → Aplicación de inicio: desde ahí se vuelve al launcher de la ROM.');
       }
     });
   }
+  var bPrev = $('m-prev'), bPlay = $('m-play'), bNext = $('m-next');
+  if (bPrev) bPrev.addEventListener('click', function () { control('anterior'); });
+  if (bPlay) bPlay.addEventListener('click', function () { control('alternar'); });
+  if (bNext) bNext.addEventListener('click', function () { control('siguiente'); });
 
-  /* Bucle de refresco: 1 Hz. Es lo que tarda como mucho el velocímetro en
-     reflejar un cambio, y no supone carga apreciable para el SoC. */
+  // ── Bucle de refresco ────────────────────────────────────────────────────
+  // 1 Hz para el coche (es lo que tarda como mucho el velocímetro en reflejar un
+  // cambio). El reloj va por su cuenta, una vez por minuto.
   function refrescar() {
     if (hayPuente) {
       try {
@@ -144,14 +224,20 @@
       } catch (e) {
         $('vel-aviso').textContent = 'estado ilegible';   // se ve, no se oculta
       }
+      try {
+        pintarMusica(window.Android.media ? JSON.parse(window.Android.media()) : null);
+      } catch (e) {
+        pintarMusica(null);
+      }
     } else {
       pintar(simulado(), true);
+      pintarMusica(simuladoMedia());
     }
   }
 
   /* Datos de prueba para el navegador. La velocidad solo se cae en un ciclo de
-     ocho, a propósito: así se revisa la pantalla NORMAL (con número grande) y
-     también el caso "sin dato", sin que la captura caiga casi siempre en el raro. */
+     ocho, a propósito: así se revisa la pantalla NORMAL y también el caso "sin
+     dato", sin que la captura caiga casi siempre en el raro. */
   var t = 0;
   function simulado() {
     t = (t + 1) % 8;
@@ -167,8 +253,13 @@
       lightsOn: t >= 4
     };
   }
+  function simuladoMedia() {
+    return { titulo: 'Nothing Else Matters', artista: 'Metallica', sonando: t % 2 === 0 };
+  }
 
+  reloj();
   montarAccesos();
   refrescar();
   setInterval(refrescar, 1000);
+  setInterval(reloj, 20000);        // cada 20 s: de sobra para cambiar de minuto
 })();

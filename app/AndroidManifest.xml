@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.cassiopeia.vgatebridge"
-    android:versionCode="38"
-    android:versionName="5.1.1">
+    android:versionCode="39"
+    android:versionName="5.2.0">
 
     <uses-sdk android:minSdkVersion="21" android:targetSdkVersion="29" />
 
@@ -87,6 +87,19 @@
             android:name=".CanSnifferService"
             android:exported="false"
             android:enabled="true" />
+
+        <!-- v5.2.0: llave para poder leer el reproductor activo (Spotify, radio).
+             Android exige un NotificationListenerService declarado y con el
+             permiso "acceso a notificaciones" concedido a mano. El servicio no lee
+             notificaciones ni guarda nada: es el componente que el sistema pide. -->
+        <service
+            android:name=".MediaListener"
+            android:exported="true"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
 
         <receiver
             android:name=".BootReceiver"
