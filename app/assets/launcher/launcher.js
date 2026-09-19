@@ -1,89 +1,196 @@
-/* Lógica de la pantalla de inicio de Polar Star.
+/* Pantalla de inicio de Polar Star — launcher de cuadro de mandos.
+
+   Los instrumentos se DIBUJAN aquí: un arco, sus marcas de escala, los números y
+   el valor. No hay ningún arco escrito a mano en el HTML ni valores pintados en
+   el CSS: todo sale de la escala de cada magnitud (mínimo, máximo y umbrales).
 
    DOS MODOS, a propósito:
-   - CON puente (en la tablet): `window.Android.estado()` y `window.Android.media()`
-     devuelven el JSON real (coche y reproductor).
-   - SIN puente (en un navegador cualquiera): datos simulados y marcados como
-     tales. Así la pantalla se monta y se revisa sin tablet y sin coche, y lo que
-     se ve en el navegador es LA MISMA pantalla, no una maqueta aparte que se
-     desincroniza.
+   - CON puente (en la tablet): `window.Android.estado()` y `media()` devuelven
+     los datos reales del coche y del reproductor.
+   - SIN puente (en un navegador): datos simulados y marcados como tales. Así se
+     revisa la pantalla sin tablet y sin coche, y es LA MISMA pantalla.
 
-   Regla que no se rompe: un dato que no llega se pinta "—", nunca 0. Un
-   velocímetro marcando cero cuando no sabe nada es una mentira peligrosa.
+   Regla que no se rompe: un dato que no llega se queda en "—" y su arco vacío,
+   nunca en 0. Un cuadro que marca cero cuando no sabe nada es una mentira
+   peligrosa.
 
-   Compatibilidad: el WebView de Android 10 es Chromium 74. Nada de flechas
-   (arrow functions), plantillas de texto ni `gap` en flex. */
+   Compatibilidad: WebView de Android 10 = Chromium 74. Sin flechas de función,
+   sin plantillas de texto, sin `let`/`const`, sin `aspect-ratio`. Y para crear
+   SVG hay que usar createElementNS, no createElement. */
 
 (function () {
   'use strict';
 
   var hayPuente = !!(window.Android && typeof window.Android.estado === 'function');
+  var SVG = 'http://www.w3.org/2000/svg';
 
-  // Accesos por defecto: paquetes comprobados en la tablet el 2026-09-19.
-  // Editables sin recompilar: llegan del fichero launcher.json vía el puente.
-  var ACCESOS = [
-    { nombre: 'Maps',     paquete: 'com.google.android.apps.maps', icono: 'mapa' },
-    { nombre: 'Waze',     paquete: 'com.waze',                     icono: 'mapa' },
-    { nombre: 'Spotify',  paquete: 'com.spotify.music',            icono: 'musica' },
-    { nombre: 'Radio',    paquete: 'com.tw.radio',                 icono: 'radio' },
-    { nombre: 'Android Auto', paquete: 'com.zjinnova.zlink',       icono: 'auto' }
-  ];
-
-  var ICONOS = {
-    mapa:   '<path d="M12 21s-6-5.2-6-10a6 6 0 1 1 12 0c0 4.8-6 10-6 10z"/><circle cx="12" cy="11" r="2.2"/>',
-    musica: '<circle cx="7" cy="17" r="2.6"/><circle cx="17" cy="15" r="2.6"/><path d="M9.6 17V7l9.4-2v10"/>',
-    radio:  '<circle cx="12" cy="13" r="3"/><path d="M4.5 5.5a10 10 0 0 0 0 15M19.5 5.5a10 10 0 0 1 0 15M7.5 8.5a6 6 0 0 0 0 9M16.5 8.5a6 6 0 0 1 0 9"/>',
-    auto:   '<rect x="3" y="4" width="18" height="12" rx="2"/><path d="M7 20h10M12 16v4"/><path d="M12 8l2.5 2.5L12 13"/>'
+  // Umbrales reales, de ~/.hermes/scripts/obd_vehicle_config.json (los mismos que
+  // usa la telemetría). Si cambian allí, cambian aquí: están en un sitio.
+  var UMBRALES = {
+    velocidadAlta: 120,
+    regimenRojo: 4800,
+    refrigeranteAviso: 95,
+    refrigeranteCritico: 105,
+    combustibleBajo: 15
   };
 
   var $ = function (id) { return document.getElementById(id); };
 
-  // ── Pintar números y testigos ────────────────────────────────────────────
-  function pintarNumero(el, valor, decimales) {
-    if (el === null) return;
-    if (valor === null || valor === undefined) { el.textContent = '—'; return; }
-    el.textContent = decimales ? valor.toFixed(decimales) : Math.round(valor);
+  // ── Dibujo de un instrumento ─────────────────────────────────────────────
+  /* cfg: {min, max, barrido, paso, unidad, decimales, zonaRoja, invertir}
+     Devuelve {poner(v)} para actualizar el valor. */
+  function crearInstrumento(contenedor, cfg) {
+    if (!contenedor) return { poner: function () {} };
+    var LADO = 200, CX = 100, CY = 100;
+    var RADIO = 78, GROSOR = 9;
+    var inicio = 90 + (360 - cfg.barrido) / 2;      // centrado arriba
+    var fin = inicio + cfg.barrido;
+    var largo = (cfg.max - cfg.min) || 1;
+
+    var svg = document.createElementNS(SVG, 'svg');
+    svg.setAttribute('viewBox', '0 0 ' + LADO + ' ' + LADO);
+    svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+    contenedor.appendChild(svg);
+
+    function punto(grados, radio) {
+      var rad = grados * Math.PI / 180;
+      return { x: CX + radio * Math.cos(rad), y: CY + radio * Math.sin(rad) };
+    }
+    function arco(desde, hasta, radio) {
+      var a = punto(desde, radio), b = punto(hasta, radio);
+      var grande = (hasta - desde) > 180 ? 1 : 0;
+      return 'M ' + a.x.toFixed(2) + ' ' + a.y.toFixed(2) +
+             ' A ' + radio + ' ' + radio + ' 0 ' + grande + ' 1 ' + b.x.toFixed(2) + ' ' + b.y.toFixed(2);
+    }
+    function nodo(nombre, atributos) {
+      var n = document.createElementNS(SVG, nombre);
+      for (var k in atributos) { if (atributos.hasOwnProperty(k)) n.setAttribute(k, atributos[k]); }
+      return n;
+    }
+
+    // aro
+    svg.appendChild(nodo('path', {
+      d: arco(inicio, fin, RADIO), 'class': 'aro', 'stroke-width': GROSOR,
+      'stroke-linecap': 'round'
+    }));
+    // zona roja (si la hay): se pinta en el tramo final antes que el valor, para
+    // que el arco de valor quede por encima cuando llegue ahí.
+    if (cfg.zonaRoja !== undefined) {
+      var gRojo = cfg.min + largo * cfg.zonaRoja;
+      if (gRojo < cfg.max) {
+        svg.appendChild(nodo('path', {
+          d: arco(inicio + cfg.barrido * cfg.zonaRoja, fin, RADIO),
+          'class': 'aro-rojo', 'stroke-width': GROSOR
+        }));
+      }
+    }
+    // marcas de escala
+    var pasos = Math.round(largo / cfg.paso);
+    for (var i = 0; i <= pasos; i++) {
+      var frac = i / pasos;
+      var ang = inicio + cfg.barrido * frac;
+      var largoMarca = (i % cfg.cadaCuantas === 0);
+      var a1 = punto(ang, RADIO - GROSOR / 2 - 3);
+      var a2 = punto(ang, RADIO - GROSOR / 2 - (largoMarca ? 14 : 8));
+      svg.appendChild(nodo('line', {
+        x1: a1.x.toFixed(1), y1: a1.y.toFixed(1), x2: a2.x.toFixed(1), y2: a2.y.toFixed(1),
+        'class': largoMarca ? 'marca-larga' : 'marca'
+      }));
+      if (largoMarca && cfg.rotular) {
+        var p = punto(ang, RADIO - 34);
+        var t = nodo('text', {
+          x: p.x.toFixed(1), y: (p.y + 4).toFixed(1), 'class': 'escala', 'text-anchor': 'middle'
+        });
+        // divisor: el régimen se rotula 1,2,3… en vez de 1000,2000,3000…
+        // Así lo hace cualquier cuadro de verdad.
+        t.textContent = String(Math.round((cfg.min + largo * frac) / (cfg.divisor || 1)));
+        svg.appendChild(t);
+      }
+    }
+    // arco de valor
+    var arcoValor = nodo('path', {
+      d: arco(inicio, fin, RADIO), 'class': 'arco-valor', 'stroke-width': GROSOR,
+      'stroke-linecap': 'round'
+    });
+    svg.appendChild(arcoValor);
+    var largoTotal = arcoValor.getTotalLength ? arcoValor.getTotalLength() : 400;
+    arcoValor.setAttribute('stroke-dasharray', largoTotal);
+    arcoValor.setAttribute('stroke-dashoffset', largoTotal);
+
+    // valor y unidad en el centro
+    var tamano = cfg.tamano || 46;
+    var texto = nodo('text', {
+      x: CX, y: CY + tamano * 0.22, 'class': 'valor', 'text-anchor': 'middle',
+      'font-size': tamano
+    });
+    texto.textContent = '—';
+    svg.appendChild(texto);
+    var etiqueta = nodo('text', {
+      x: CX, y: CY + tamano * 0.22 + 17, 'class': 'unidad', 'text-anchor': 'middle', 'font-size': 14
+    });
+    etiqueta.textContent = cfg.unidad || '';
+    svg.appendChild(etiqueta);
+
+    return {
+      poner: function (valor) {
+        var sinDato = (valor === null || valor === undefined);
+        if (sinDato) {
+          texto.textContent = '—';
+          arcoValor.setAttribute('stroke-dashoffset', largoTotal);
+          svg.classList.remove('en-rojo');
+          return;
+        }
+        var v = Math.min(Math.max(valor, cfg.min), cfg.max);
+        var frac = (v - cfg.min) / largo;
+        texto.textContent = cfg.decimales ? valor.toFixed(cfg.decimales) : String(Math.round(valor));
+        arcoValor.setAttribute('stroke-dashoffset', (largoTotal * (1 - frac)).toFixed(1));
+        if (cfg.zonaRoja !== undefined) {
+          svg.classList.toggle('en-rojo', frac >= cfg.zonaRoja);
+        }
+      }
+    };
   }
 
-  function pintarTestigo(el, textoEl, activo, etiqueta) {
-    if (!el) return;
-    el.classList.toggle('activo', activo === true);
-    el.classList.toggle('desconocido', activo === null || activo === undefined);
-    if (textoEl) textoEl.textContent = etiqueta;
-  }
+  // ── Los cuatro instrumentos, con su escala ───────────────────────────────
+  var medidorVelocidad = crearInstrumento($('med-vel'), {
+    min: 0, max: 180, barrido: 240, paso: 20, cadaCuantas: 1,
+    unidad: 'km/h', tamano: 52, rotular: true, zonaRoja: UMBRALES.velocidadAlta / 180
+  });
+  var medidorRegimen = crearInstrumento($('med-rpm'), {
+    min: 0, max: 6000, barrido: 240, paso: 1000, cadaCuantas: 1, divisor: 1000,
+    unidad: 'rpm', tamano: 30, rotular: true, zonaRoja: UMBRALES.regimenRojo / 6000
+  });
+  var medidorCombustible = crearInstrumento($('med-fuel'), {
+    min: 0, max: 100, barrido: 200, paso: 50, cadaCuantas: 2,
+    unidad: '%', tamano: 26, rotular: true, zonaRoja: 0.85
+  });
+  var medidorMotor = crearInstrumento($('med-temp'), {
+    min: 40, max: 120, barrido: 200, paso: 40, cadaCuantas: 2,
+    unidad: '°C', tamano: 26, rotular: true,
+    zonaRoja: (UMBRALES.refrigeranteAviso - 40) / 80
+  });
 
-  // ── Reloj ────────────────────────────────────────────────────────────────
-  // Local, sin red. Se refresca por minuto: en un SoC flojo no compensa más y
-  // nadie necesita ver correr los segundos.
+  // ── Reloj (local, sin red; refresco por minuto) ──────────────────────────
   var DIAS = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
   var MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio',
                'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
   function reloj() {
     var d = new Date();
     var hh = d.getHours(), mm = d.getMinutes();
-    var hora = (hh < 10 ? '0' : '') + hh + ':' + (mm < 10 ? '0' : '') + mm;
-    var el = $('reloj-hora'); if (el) el.textContent = hora;
+    var e = $('reloj-hora');
+    if (e) e.textContent = (hh < 10 ? '0' : '') + hh + ':' + (mm < 10 ? '0' : '') + mm;
     var f = $('reloj-fecha');
     if (f) f.textContent = DIAS[d.getDay()] + ', ' + d.getDate() + ' de ' + MESES[d.getMonth()];
   }
 
   // ── Música ───────────────────────────────────────────────────────────────
-  /* Tres estados, y los tres se ven:
-      1. reproduciendo        → título, artista y controles
-      2. nada sonando         → la zona se pliega (no ocupa sitio en balde)
-      3. sin permiso          → aviso con enlace para concederlo en Ajustes
-     El caso 3 es real: leer el reproductor exige "acceso a notificaciones", que se
-     concede a mano. Un bloque vacío y mudo sería lo peor. */
   function pintarMusica(m) {
-    var zona = $('m-zona');
+    var zona = $('m-zona'), aviso = $('m-aviso');
     if (!zona) return;
-    var aviso = $('m-aviso');
-    var titulo = $('m-titulo'), artista = $('m-artista');
-
     if (m && m.permiso === false) {
       zona.classList.add('plegada');
-      titulo.textContent = 'Música';
-      artista.textContent = '';
+      $('m-titulo').textContent = 'Música';
+      $('m-artista').textContent = '';
       aviso.textContent = 'Permite el acceso a notificaciones para ver lo que suena';
       aviso.classList.add('enlace');
       aviso.onclick = function () { abrirAjusteNotificaciones(); };
@@ -91,23 +198,22 @@
     }
     aviso.classList.remove('enlace');
     aviso.onclick = null;
-
     if (!m || !m.titulo) {
       zona.classList.add('plegada');
-      titulo.textContent = 'Sin reproducción';
-      artista.textContent = '';
+      $('m-titulo').textContent = 'Sin reproducción';
+      $('m-artista').textContent = '';
       aviso.textContent = '';
       return;
     }
     zona.classList.remove('plegada');
-    titulo.textContent = m.titulo;
-    artista.textContent = m.artista || '';
+    $('m-titulo').textContent = m.titulo;
+    $('m-artista').textContent = m.artista || '';
     aviso.textContent = m.sonando ? '' : 'en pausa';
     var icono = $('m-play-icono');
     if (icono) {
       icono.innerHTML = m.sonando
-        ? '<path d="M8 5h3v14H8zM13 5h3v14h-3z"/>'      // pausa
-        : '<path d="M7 4l13 8-13 8z"/>';                // play
+        ? '<path d="M8 5h3v14H8zM13 5h3v14h-3z"/>'
+        : '<path d="M7 4l13 8-13 8z"/>';
     }
   }
 
@@ -118,30 +224,47 @@
       alert('Ajustes → Acceso a notificaciones: actívalo para VgateBridge.');
     }
   }
-
   function control(accion) {
     if (window.Android && typeof window.Android.mediaControl === 'function') {
       window.Android.mediaControl(accion);
     }
   }
 
-  // ── Estado del coche ─────────────────────────────────────────────────────
+  // ── Datos del coche a los instrumentos ───────────────────────────────────
+  function pintarNumero(el, valor, decimales) {
+    if (!el) return;
+    if (valor === null || valor === undefined) { el.textContent = '—'; return; }
+    el.textContent = decimales ? valor.toFixed(decimales) : String(Math.round(valor));
+  }
+  function pintarTestigo(el, textoEl, activo, etiqueta) {
+    if (!el) return;
+    el.classList.toggle('activo', activo === true);
+    el.classList.toggle('desconocido', activo === null || activo === undefined);
+    if (textoEl) textoEl.textContent = etiqueta;
+  }
+
   function pintar(estado, simulado) {
-    var v = estado.speed;
-    var vel = $('vel-valor');
-    pintarNumero(vel, v, 0);
-    vel.classList.toggle('sin-dato', v === null || v === undefined);
+    medidorVelocidad.poner(estado.speed);
+    medidorRegimen.poner(estado.rpm);
+    medidorCombustible.poner(estado.fuel);
+    medidorMotor.poner(estado.coolant);
+
     var av = $('vel-aviso');
-    av.textContent = (v !== null && v !== undefined && v > 120) ? 'Velocidad alta' : '';
-    if (simulado) av.textContent = 'datos simulados (sin puente)';
-    if (v === null || v === undefined) av.textContent = 'sin datos del motor';
+    if (av) {
+      av.textContent = (estado.coolant !== null && estado.coolant !== undefined &&
+                        estado.coolant >= UMBRALES.refrigeranteCritico) ? 'motor caliente' : '';
+      if (estado.speed !== null && estado.speed !== undefined && estado.speed > UMBRALES.velocidadAlta) {
+        av.textContent = 'velocidad alta';
+      }
+      if (estado.fuel !== null && estado.fuel !== undefined && estado.fuel < UMBRALES.combustibleBajo) {
+        av.textContent = 'combustible bajo';
+      }
+      if (simulado) av.textContent = 'datos simulados (sin puente)';
+    }
 
     pintarNumero($('d-consumo'), estado.consumption, 1);
     pintarNumero($('d-rango'), estado.range, 0);
     pintarNumero($('d-ext'), estado.outsideTemp, 0);
-    pintarNumero($('d-motor'), estado.coolant, 0);
-    pintarNumero($('d-rpm'), estado.rpm, 0);
-    pintarNumero($('d-fuel'), estado.fuel, 0);
 
     pintarTestigo($('t-puertas'), $('t-puertas-texto'), estado.doorOpen,
                   estado.doorOpen ? 'puerta abierta' : 'puertas');
@@ -151,8 +274,8 @@
     tema(estado);
   }
 
-  /* Tema: en automático lo decide el ALUMBRADO (dato del CAN), no la hora. Con
-     niebla a mediodía llevas luces y quieres el panel oscuro. */
+  /* Tema automático por el ALUMBRADO del coche (CAN 1281/56), no por la hora: con
+     niebla a mediodía llevas luces y quieres el cuadro oscuro. */
   function tema(estado) {
     var modo = (window.Android && window.Android.tema) ? window.Android.tema() : 'auto';
     if (modo === 'dia' || modo === 'noche') { aplicar(modo); return; }
@@ -161,7 +284,6 @@
     var h = new Date().getHours();
     aplicar((h >= 8 && h < 20) ? 'dia' : 'noche');
   }
-
   function aplicar(clase) {
     var b = document.body;
     if (b.classList.contains(clase)) return;
@@ -170,6 +292,19 @@
   }
 
   // ── Accesos ──────────────────────────────────────────────────────────────
+  var ACCESOS = [
+    { nombre: 'Maps',     paquete: 'com.google.android.apps.maps', icono: 'mapa' },
+    { nombre: 'Waze',     paquete: 'com.waze',                     icono: 'mapa' },
+    { nombre: 'Spotify',  paquete: 'com.spotify.music',            icono: 'musica' },
+    { nombre: 'Radio',    paquete: 'com.tw.radio',                 icono: 'radio' },
+    { nombre: 'Android Auto', paquete: 'com.zjinnova.zlink',       icono: 'auto' }
+  ];
+  var ICONOS = {
+    mapa:   '<path d="M12 21s-6-5.2-6-10a6 6 0 1 1 12 0c0 4.8-6 10-6 10z"/><circle cx="12" cy="11" r="2.2"/>',
+    musica: '<circle cx="7" cy="17" r="2.6"/><circle cx="17" cy="15" r="2.6"/><path d="M9.6 17V7l9.4-2v10"/>',
+    radio:  '<circle cx="12" cy="13" r="3"/><path d="M4.5 5.5a10 10 0 0 0 0 15M19.5 5.5a10 10 0 0 1 0 15M7.5 8.5a6 6 0 0 0 0 9M16.5 8.5a6 6 0 0 1 0 9"/>',
+    auto:   '<rect x="3" y="4" width="18" height="12" rx="2"/><path d="M7 20h10M12 16v4"/><path d="M12 8l2.5 2.5L12 13"/>'
+  };
   function montarAccesos() {
     var caja = $('accesos');
     if (!caja) return;
@@ -183,11 +318,9 @@
     caja.innerHTML = '';
     lista.forEach(function (app) {
       var b = document.createElement('button');
-      // innerHTML SOLO con las constantes de ICONOS (SVG dibujado aquí dentro):
-      // no entra ningún dato de fuera. El nombre, que sí puede venir del fichero
-      // de config, se pinta con textContent justo debajo. No hay inyección.
-      b.innerHTML = '<svg viewBox="0 0 24 24">' + (ICONOS[app.icono] || ICONOS.mapa) + '</svg>'
-                  + '<span></span>';
+      // innerHTML SOLO con las constantes de ICONOS (SVG dibujado aquí dentro). El
+      // nombre, que sí puede venir del fichero de config, se pinta con textContent.
+      b.innerHTML = '<svg viewBox="0 0 24 24">' + (ICONOS[app.icono] || ICONOS.mapa) + '</svg><span></span>';
       b.querySelector('span').textContent = app.nombre;
       if (!hayPuente) b.classList.add('no-disponible');
       b.addEventListener('click', function () {
@@ -214,52 +347,45 @@
   if (bPlay) bPlay.addEventListener('click', function () { control('alternar'); });
   if (bNext) bNext.addEventListener('click', function () { control('siguiente'); });
 
-  // ── Bucle de refresco ────────────────────────────────────────────────────
-  // 1 Hz para el coche (es lo que tarda como mucho el velocímetro en reflejar un
-  // cambio). El reloj va por su cuenta, una vez por minuto.
+  // ── Refresco: 1 Hz para los instrumentos; el reloj, por su cuenta ────────
   function refrescar() {
     if (hayPuente) {
       try {
         pintar(JSON.parse(window.Android.estado()), false);
       } catch (e) {
-        $('vel-aviso').textContent = 'estado ilegible';   // se ve, no se oculta
+        var av = $('vel-aviso'); if (av) av.textContent = 'estado ilegible';
       }
       try {
         pintarMusica(window.Android.media ? JSON.parse(window.Android.media()) : null);
-      } catch (e) {
-        pintarMusica(null);
-      }
+      } catch (e) { pintarMusica(null); }
     } else {
       pintar(simulado(), true);
       pintarMusica(simuladoMedia());
     }
   }
 
-  /* Datos de prueba para el navegador. La velocidad solo se cae en un ciclo de
-     ocho, a propósito: así se revisa la pantalla NORMAL y también el caso "sin
-     dato", sin que la captura caiga casi siempre en el raro. */
   var t = 0;
   function simulado() {
     t = (t + 1) % 8;
     return {
-      speed: t === 7 ? null : 47 + t * 9,
-      rpm: 1450 + t * 120,
-      coolant: 84,
-      consumption: 4.4 + (t % 3) * 0.3,
+      speed: t === 7 ? null : 34 + t * 9,
+      rpm: 1500 + t * 260,
+      coolant: 84 + t,
+      consumption: 5.1 + (t % 3) * 0.4,
       range: 612,
-      outsideTemp: 17,
-      fuel: 62,
+      outsideTemp: 27,
+      fuel: 62 - t,
       doorOpen: t === 6,
       lightsOn: t >= 4
     };
   }
   function simuladoMedia() {
-    return { titulo: 'Nothing Else Matters', artista: 'Metallica', sonando: t % 2 === 0 };
+    return { titulo: 'Bohemian Rhapsody', artista: 'Queen', sonando: t % 2 === 0 };
   }
 
   reloj();
   montarAccesos();
   refrescar();
   setInterval(refrescar, 1000);
-  setInterval(reloj, 20000);        // cada 20 s: de sobra para cambiar de minuto
+  setInterval(reloj, 20000);
 })();

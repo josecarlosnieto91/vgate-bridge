@@ -1,243 +1,224 @@
-/* Pantalla de inicio de Polar Star — rediseño del 2026-09-19.
+/* Pantalla de inicio de Polar Star — cuadro de mandos.
 
-   Criterio: sobrio. Se mira de reojo, a pleno sol o de noche, en una pantalla de
-   7 pulgadas a un metro. Por eso: mucho aire, jerarquía clara, superficies
-   apenas insinuadas (un tono por encima del fondo y un borde de una décima de
-   blanco) y UN solo color de acento. Nada de texturas, brillos ni adornos.
+   Criterio: parecerse a un cuadro de mandos de verdad sin caer en el cromado.
+   Nada de biseles, tornillos ni brillos: arcos finos, escalas, un único color de
+   acento y números que se leen a un metro. Lo analógico (arcos y agujas) se
+   reserva para lo que cambia rápido —velocidad y régimen—, y lo que cambia
+   despacio (combustible, temperatura) tiene su instrumento pequeño.
+   Los números que no merecen reloj propio van en texto, como en el cuadro real.
 
-   SIN ANIMACIONES (transiciones de color, como mucho): el UIS8581A es un SoC
-   flojo y cada transición se nota en el refresco del velocímetro.
+   SIN ANIMACIONES salvo las transiciones cortas de los arcos: el UIS8581A es un
+   SoC flojo y cada fotograma se nota en el refresco.
 
-   Tema noche/día: en automático lo decide el ALUMBRADO del coche (CAN 1281/56),
-   no la hora — con niebla a mediodía llevas luces y quieres el panel oscuro.
+   Tema noche/día automático por el ALUMBRADO del coche (CAN 1281/56).
 
-   ⚠️ COMPATIBILIDAD: el WebView de Android 10 es Chromium 74 y NO soporta `gap`
-   en contenedores FLEX (llegó en el 84). Los `gap` de GRID sí funcionan (desde
-   el 57). Por eso aquí se usa grid con gap y, donde hay flex, márgenes. */
-
+   ⚠️ COMPATIBILIDAD: el WebView de Android 10 es Chromium 74. Nada de `gap` en
+   flex (llegó en el 84), ni `aspect-ratio` (88), ni flechas de función. */
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
 html, body {
   height: 100%;
-  overflow: hidden;                 /* nada de scroll en un salpicadero */
+  overflow: hidden;
   font-family: system-ui, "Roboto", sans-serif;
   -webkit-user-select: none; user-select: none;
 }
 
-body {
-  display: flex; flex-direction: column;
-  padding: 2vh 2vw;
-  transition: background .25s, color .25s;
-}
+body { display: flex; flex-direction: column; padding: 1.6vh 1.6vw; }
 
 /* ── Paleta ──────────────────────────────────────────────────────────────── */
 body.noche {
-  background: #090c11;
-  background-image: radial-gradient(120% 90% at 20% 0%, #121821 0%, #090c11 60%);
+  background: #080b10;
+  background-image: radial-gradient(115% 85% at 50% 0%, #10161f 0%, #080b10 62%);
   color: #eaf0f7;
-  --sup: #141a23;
-  --borde: rgba(255, 255, 255, .055);
-  --sup2: #1b232e;
-  --etiqueta: #8b9aab;
-  --sec: #98a7b8;
-  --apagado: #4c5866;
+  --aro: #1d2631;            /* el aro del instrumento */
+  --marca: #33404f;          /* marcas de escala */
+  --sup: #111823;
+  --borde: rgba(255, 255, 255, .06);
+  --sec: #93a3b5;
+  --apagado: #4a5665;
+  --acento: #ffab00;
+  --alerta: #ff5a3c;
+  --verde: #38d39f;
 }
 body.dia {
-  background: #e9edf1;
-  background-image: radial-gradient(120% 90% at 20% 0%, #ffffff 0%, #e9edf1 60%);
-  color: #0d141b;
+  background: #e8ecf0;
+  background-image: radial-gradient(115% 85% at 50% 0%, #ffffff 0%, #e8ecf0 62%);
+  color: #0c131a;
+  --aro: #cfd7df;
+  --marca: #9aa7b3;
   --sup: #ffffff;
-  --borde: rgba(13, 20, 27, .07);
-  --sup2: #f2f5f8;
-  --etiqueta: #5d6b7a;
-  --sec: #5d6b7a;
-  --apagado: #9aa7b4;
+  --borde: rgba(12, 19, 26, .08);
+  --sec: #586675;
+  --apagado: #96a3b0;
+  --acento: #e0670a;
+  --alerta: #d0331a;
+  --verde: #0f9e73;
 }
 
-/* ── Rejilla principal ───────────────────────────────────────────────────── */
-.panel {
-  flex: 1;
-  margin-bottom: 1.6vh;
+/* ── Barra superior: reloj y música, discretos ───────────────────────────── */
+.barra {
   display: grid;
-  grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr);
-  grid-template-rows: auto minmax(0, 1fr);
-  grid-template-areas:
-    "reloj    musica"
-    "velocidad datos";
-  gap: 1.6vh 1.6vw;
-  min-height: 0;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 1.5vw;
+  padding-bottom: 1.2vh;
+  border-bottom: 1px solid var(--borde);
 }
-
-.zona {
-  background: var(--sup);
-  border: 1px solid var(--borde);
-  border-radius: 2vh;
-  min-width: 0;
-  min-height: 0;
-}
-
-/* ── Reloj ───────────────────────────────────────────────────────────────── */
-.reloj {
-  grid-area: reloj;
-  display: flex; flex-direction: column; justify-content: center;
-  padding: 1.6vh 1.8vw;
-}
+.reloj { display: flex; align-items: baseline; }
 #reloj-hora {
-  font-size: 6.6vh; line-height: 1; font-weight: 650;
-  font-variant-numeric: tabular-nums; letter-spacing: -.01em;
+  font-size: 4vh; font-weight: 650; line-height: 1;
+  font-variant-numeric: tabular-nums;
 }
 #reloj-fecha {
-  font-size: 2vh; color: var(--sec); margin-top: .7vh;
-  text-transform: capitalize; letter-spacing: .02em;
+  font-size: 1.7vh; color: var(--sec); margin-left: 1vw;
+  text-transform: capitalize;
 }
 
-/* ── Música ──────────────────────────────────────────────────────────────── */
 .musica {
-  grid-area: musica;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  grid-template-rows: 1fr auto;
-  grid-template-areas:
-    "pista    controles"
-    "aviso    aviso";
+  grid-template-areas: "pista controles" "aviso aviso";
   align-items: center;
-  padding: 1.6vh 1.6vw;
-  gap: .6vh 1vw;
+  justify-items: end;
+  min-width: 0;
 }
-/* Sin canción ni permiso: la zona se pliega para no ocupar sitio en balde. */
-.musica.plegada { grid-template-rows: 1fr 0; }
 .musica.plegada .m-controles { display: none; }
-
-.m-pista { grid-area: pista; display: flex; flex-direction: column; min-width: 0; }
+.m-pista {
+  grid-area: pista; display: flex; align-items: baseline;
+  min-width: 0; max-width: 100%;
+}
 #m-titulo {
-  font-size: 2.5vh; font-weight: 600; line-height: 1.2;
+  font-size: 2.1vh; font-weight: 600;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-#m-artista {
-  font-size: 1.9vh; color: var(--sec); margin-top: .4vh;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-}
+#m-artista { font-size: 1.7vh; color: var(--sec); margin-left: .8vw; white-space: nowrap; }
 .m-controles { grid-area: controles; display: flex; align-items: center; }
 .m-controles button {
-  width: 6vh; height: 6vh;
-  margin-left: .7vw;
+  width: 4.6vh; height: 4.6vh; margin-left: .6vw;
   border: 1px solid var(--borde); border-radius: 50%;
-  background: var(--sup2); color: inherit;
-  display: flex; align-items: center; justify-content: center;
-  cursor: pointer;
+  background: var(--sup); color: inherit;
+  display: flex; align-items: center; justify-content: center; cursor: pointer;
 }
-.m-controles button:active { background: var(--apagado); }
-.m-controles svg { width: 2.6vh; height: 2.6vh; fill: none; stroke: currentColor; stroke-width: 1.7; }
+.m-controles button:active { background: var(--marca); }
+.m-controles svg { width: 2vh; height: 2vh; fill: none; stroke: currentColor; stroke-width: 1.7; }
 #m-play svg { fill: currentColor; stroke-width: 1; }
 .m-aviso {
-  grid-area: aviso; font-size: 1.7vh; color: var(--etiqueta);
-  min-height: 0; line-height: 1.3;
+  grid-area: aviso; font-size: 1.6vh; color: var(--sec);
+  text-align: right; min-height: 0;
 }
-.m-aviso.enlace { color: #ffab00; }
+.m-aviso.enlace { color: var(--acento); }
 
-/* ── Velocidad ───────────────────────────────────────────────────────────── */
-.velocidad {
-  grid-area: velocidad;
-  display: flex; flex-direction: column;
-  align-items: center; justify-content: center;
-  padding: 1vh;
-}
-.aguja { display: flex; align-items: baseline; }
-.aguja .unidad { margin-left: 1.2vw; }
-#vel-valor {
-  font-size: 24vh; line-height: .84; font-weight: 680;
-  font-variant-numeric: tabular-nums; letter-spacing: -.03em;
-}
-.unidad { font-size: 4.2vh; color: var(--sec); font-weight: 500; }
-.aviso { font-size: 2.1vh; color: #ffab00; min-height: 2.6vh; margin-top: .8vh; }
-
-/* Sin dato: NO un cero ni un guion gigante (un guion a 24vh se lee como una barra
-   rota). Se reduce, se apaga y el aviso dice qué pasa. */
-#vel-valor.sin-dato { color: var(--apagado); font-size: 10vh; }
-
-/* ── Datos ───────────────────────────────────────────────────────────────── */
-.datos {
-  grid-area: datos;
-  padding: 1.4vh 1.2vw;
+/* ── Cuadro: los instrumentos ────────────────────────────────────────────── */
+.cuadro {
+  flex: 1;
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  grid-template-rows: 1fr 1fr auto;
-  gap: 1.2vh 1vw;
+  grid-template-columns: minmax(0, .82fr) minmax(0, 1.6fr) minmax(0, .72fr);
+  gap: 1.2vw;
+  padding: 1.6vh 0 1vh;
   min-height: 0;
 }
-.dato {
-  display: flex; flex-direction: column; justify-content: center;
-  min-width: 0; padding-left: 1vw;
-  border-left: 2px solid var(--borde);
+.instrumento {
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  min-height: 0; min-width: 0;
 }
-.etiqueta {
-  font-size: 1.7vh; text-transform: uppercase; letter-spacing: .1em;
-  color: var(--etiqueta); font-weight: 600; margin-bottom: .4vh;
-}
-.dato .valor { display: flex; align-items: baseline; }
-.dato .valor b {
-  font-size: 5.2vh; font-weight: 620; line-height: 1;
-  font-variant-numeric: tabular-nums;
-}
-.dato .valor i { font-size: 1.9vh; font-style: normal; color: var(--sec); margin-left: .4vw; }
+/* La esfera es un SVG que se dibuja en launcher.js: el arco, las marcas, los
+   números y el valor. Sin aspect-ratio (no existe en Chromium 74): el SVG se
+   estira y su viewBox mantiene la proporción. */
+.esfera { flex: 1; width: 100%; min-height: 0; }
+.esfera svg { width: 100%; height: 100%; display: block; }
 
-/* Tira de datos de técnico y testigos: discreta, en una sola línea. */
-.tira {
-  grid-column: 1 / -1;
-  display: grid;
-  grid-template-columns: repeat(2, 1fr) repeat(2, minmax(0, .9fr));
-  gap: .8vw;
-  padding-top: 1.1vh;
-  border-top: 1px solid var(--borde);
-  align-items: center;
+.nombre {
+  font-size: 1.6vh; text-transform: uppercase; letter-spacing: .12em;
+  color: var(--sec); font-weight: 600;
 }
-.tira-item { display: flex; align-items: baseline; min-width: 0; }
-.tira-item em {
-  font-style: normal; font-size: 1.6vh; color: var(--etiqueta);
+
+.columna { display: flex; flex-direction: column; min-height: 0; }
+.columna .instrumento { flex: 1; }
+
+/* ── Testigos y leyenda, dentro del velocímetro ──────────────────────────── */
+.avisos {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr);
+  align-items: center;
+  gap: .8vw;
+  width: 100%;
+  padding-top: .4vh;
+}
+.testigo { display: flex; align-items: center; color: var(--apagado); }
+.testigo svg { width: 2.4vh; height: 2.4vh; fill: none; stroke: currentColor; stroke-width: 1.7; }
+.testigo b { font-size: 1.6vh; margin-left: .4vw; font-weight: 600; }
+.testigo.activo { color: var(--acento); }
+.testigo.activo svg { stroke-width: 2.1; }
+.testigo.desconocido { opacity: .4; }
+.leyenda { font-size: 1.6vh; color: var(--alerta); text-align: right; }
+
+/* ── Tira de datos en texto ──────────────────────────────────────────────── */
+.tira {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1vw;
+  padding: .8vh 0 1.4vh;
+}
+.dato { display: flex; align-items: baseline; justify-content: center; }
+.dato em {
+  font-style: normal; font-size: 1.6vh; color: var(--sec);
   text-transform: lowercase; letter-spacing: .04em;
 }
-.tira-item b {
-  font-size: 2.3vh; font-weight: 600; margin-left: .5vw;
+.dato b {
+  font-size: 2.6vh; font-weight: 650; margin-left: .5vw;
   font-variant-numeric: tabular-nums;
 }
-.tira-item svg {
-  width: 2.6vh; height: 2.6vh; fill: none; stroke: currentColor;
-  stroke-width: 1.7; color: var(--apagado); align-self: center;
+.dato i { font-style: normal; font-size: 1.5vh; color: var(--sec); margin-left: .3vw; }
+
+/* ── Piezas del instrumento (SVG dibujado por launcher.js) ───────────────── */
+.aro { fill: none; stroke: var(--aro); stroke-width: 9; stroke-linecap: round; }
+/* Zona roja de la escala: se dibuja bajo el arco de valor, así que solo se ve
+   cuando el valor todavía no ha llegado a ella. */
+.aro-rojo { fill: none; stroke: var(--alerta); stroke-width: 9; opacity: .55; stroke-linecap: butt; }
+.marca { stroke: var(--marca); stroke-width: 1.6; }
+.marca-larga { stroke: var(--sec); stroke-width: 2.6; }
+.escala { fill: var(--sec); font-weight: 600; font-size: 13px; }
+/* Arco de valor: la "aguja" de este cuadro. El truco es el dasharray: el arco se
+   dibuja entero y se tapa lo que sobra con el dashoffset. */
+.arco-valor {
+  fill: none; stroke: var(--acento); stroke-width: 9; stroke-linecap: round;
+  transition: stroke-dashoffset .18s linear;
 }
-.tira-item.activo svg { color: #ffab00; }
-.tira-item.activo b { color: #ffab00; }
-.tira-item.desconocido { opacity: .45; }
+.en-rojo .arco-valor { stroke: var(--alerta); }
+.valor { fill: currentColor; font-weight: 680; font-variant-numeric: tabular-nums; }
+.unidad { fill: var(--sec); font-weight: 500; }
 
 /* ── Accesos ─────────────────────────────────────────────────────────────── */
 .accesos {
   display: grid;
   grid-auto-flow: column;
-  grid-auto-columns: minmax(0, 1fr);   /* sin el 0, el último botón se sale */
-  gap: 1.2vw;
-  padding-right: 8vh;                  /* hueco para el botón de ajustes */
+  grid-auto-columns: minmax(0, 1fr);
+  gap: 1vw;
+  padding-right: 7.5vh;
 }
 .accesos button {
   display: flex; flex-direction: column; align-items: center; justify-content: center;
-  min-width: 0; padding: 1.5vh .6vw;
-  border: 1px solid var(--borde); border-radius: 1.8vh;
+  min-width: 0; padding: 1.1vh .5vw;
+  border: 1px solid var(--borde); border-radius: 1.6vh;
   background: var(--sup); color: inherit;
-  font-family: inherit; font-size: 1.8vh; font-weight: 600; line-height: 1.15;
+  font-family: inherit; font-size: 1.7vh; font-weight: 600; line-height: 1.15;
   text-align: center; white-space: normal; overflow-wrap: anywhere;
   cursor: pointer;
 }
-.accesos button:active { background: var(--sup2); }
+.accesos button:active { background: var(--marca); }
 .accesos svg {
-  width: 4.2vh; height: 4.2vh; flex: none;
+  width: 3.6vh; height: 3.6vh; flex: none;
   fill: none; stroke: currentColor; stroke-width: 1.6; color: var(--sec);
 }
-.accesos button span { margin-top: .5vh; }
+.accesos button span { margin-top: .4vh; }
 .accesos .no-disponible { opacity: .4; }
 
 /* ── Ajustes (salida de emergencia) ──────────────────────────────────────── */
 .ajustes {
-  position: fixed; right: 1.2vw; bottom: 2vh;
-  width: 6vh; height: 6vh; border-radius: 50%;
-  border: 1px solid var(--borde); background: var(--sup); color: var(--etiqueta);
+  position: fixed; right: 1vw; bottom: 1.6vh;
+  width: 5.6vh; height: 5.6vh; border-radius: 50%;
+  border: 1px solid var(--borde); background: var(--sup); color: var(--sec);
   display: flex; align-items: center; justify-content: center; cursor: pointer;
 }
-.ajustes svg { width: 3vh; height: 3vh; fill: none; stroke: currentColor; stroke-width: 1.6; }
+.ajustes svg { width: 2.8vh; height: 2.8vh; fill: none; stroke: currentColor; stroke-width: 1.6; }

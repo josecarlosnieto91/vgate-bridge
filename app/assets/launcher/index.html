@@ -8,20 +8,14 @@
 </head>
 <body class="noche">
 
-  <main class="panel">
-
-    <!-- RELOJ: lo que más se mira de reojo en un salpicadero. Hora y fecha
-         locales, sin red. Se refresca por minuto (no cada segundo: en un SoC
-         flojo no compensa y nadie necesita ver correr los segundos). -->
-    <section class="zona reloj">
+  <!-- BARRA SUPERIOR: reloj y música, en segundo plano. En un cuadro de mandos lo
+       importante es lo de abajo; esto es información de apoyo, no el protagonista. -->
+  <header class="barra">
+    <div class="reloj">
       <b id="reloj-hora">--:--</b>
       <span id="reloj-fecha"></span>
-    </section>
-
-    <!-- MÚSICA: canción y controles. Tres estados, y los tres se ven:
-         reproduciendo, nada sonando (la zona se pliega) y sin permiso (aviso con
-         enlace para concederlo). Un hueco vacío y mudo es peor que un aviso. -->
-    <section class="zona musica" id="m-zona">
+    </div>
+    <div class="musica" id="m-zona">
       <div class="m-pista">
         <b id="m-titulo">—</b>
         <span id="m-artista"></span>
@@ -31,51 +25,55 @@
         <button id="m-play" aria-label="Reproducir o pausar"><svg viewBox="0 0 24 24" id="m-play-icono"><path d="M7 4l13 8-13 8z"/></svg></button>
         <button id="m-next" aria-label="Siguiente"><svg viewBox="0 0 24 24"><path d="M18 5v14M5 5l11 7-11 7z"/></svg></button>
       </div>
-      <p class="m-aviso" id="m-aviso"></p>
+    </div>
+    <p class="m-aviso" id="m-aviso"></p>
+  </header>
+
+  <!-- INSTRUMENTOS. Los arcos los dibuja launcher.js a partir de la escala de cada
+       magnitud: aquí no hay valores escritos a mano. -->
+  <main class="cuadro">
+
+    <section class="instrumento">
+      <div class="esfera" id="med-rpm"></div>
+      <span class="nombre">régimen</span>
     </section>
 
-    <!-- VELOCIDAD: manda. Si no hay dato, guion pequeño y se dice por qué —
-         nunca un cero, que sería una mentira peligrosa. -->
-    <section class="zona velocidad">
-      <div class="aguja">
-        <span id="vel-valor">—</span>
-        <span class="unidad">km/h</span>
-      </div>
-      <div class="aviso" id="vel-aviso"></div>
-    </section>
-
-    <!-- DATOS: arriba los cuatro que se entienden sin pensar; debajo una tira
-         fina con los de técnico (régimen, combustible) y los testigos. -->
-    <section class="zona datos">
-      <div class="dato"><span class="etiqueta">Consumo</span>
-        <span class="valor"><b id="d-consumo">—</b><i>l/100</i></span></div>
-      <div class="dato"><span class="etiqueta">Autonomía</span>
-        <span class="valor"><b id="d-rango">—</b><i>km</i></span></div>
-      <div class="dato"><span class="etiqueta">Exterior</span>
-        <span class="valor"><b id="d-ext">—</b><i>°C</i></span></div>
-      <div class="dato"><span class="etiqueta">Motor</span>
-        <span class="valor"><b id="d-motor">—</b><i>°C</i></span></div>
-
-      <div class="tira">
-        <span class="tira-item"><em>régimen</em><b id="d-rpm">—</b></span>
-        <span class="tira-item"><em>combustible</em><b id="d-fuel">—</b></span>
-        <span class="tira-item" id="t-puertas">
+    <section class="instrumento principal">
+      <div class="esfera" id="med-vel"></div>
+      <div class="avisos">
+        <span class="testigo" id="t-puertas">
           <svg viewBox="0 0 24 24"><path d="M4 4h9l5 5v11H4z"/><path d="M13 4v5h5"/></svg>
           <b id="t-puertas-texto">puertas</b>
         </span>
-        <span class="tira-item" id="t-luces">
+        <span class="testigo" id="t-luces">
           <svg viewBox="0 0 24 24"><path d="M3 12h6l4-5v10l-4-5H3z"/><path d="M16 8l4-3M16 12h5M16 16l4 3"/></svg>
           <b id="t-luces-texto">alumbrado</b>
         </span>
+        <span class="leyenda" id="vel-aviso"></span>
+      </div>
+    </section>
+
+    <section class="columna">
+      <div class="instrumento pequeno">
+        <div class="esfera" id="med-fuel"></div>
+        <span class="nombre">combustible</span>
+      </div>
+      <div class="instrumento pequeno">
+        <div class="esfera" id="med-temp"></div>
+        <span class="nombre">motor</span>
       </div>
     </section>
   </main>
 
-  <!-- ACCESOS: la fila de apps. Paquetes reales comprobados en la tablet,
-       editables desde launcher.json sin recompilar. -->
+  <!-- Datos que no merecen un reloj propio: en texto, como las cifras del cuadro. -->
+  <section class="tira">
+    <span class="dato"><em>consumo</em><b id="d-consumo">—</b><i>l/100</i></span>
+    <span class="dato"><em>autonomía</em><b id="d-rango">—</b><i>km</i></span>
+    <span class="dato"><em>exterior</em><b id="d-ext">—</b><i>°C</i></span>
+  </section>
+
   <footer class="accesos" id="accesos"></footer>
 
-  <!-- Salida de emergencia: volver al launcher de la ROM siempre a un toque. -->
   <button class="ajustes" id="btn-ajustes" title="Ajustes del sistema">
     <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M19 5l-2 2M7 17l-2 2"/></svg>
   </button>
