@@ -30,19 +30,12 @@ $BUILD_TOOLS/d8 --release --output build/ \
     build/classes/com/cassiopeia/vgatebridge/*.class
 
 echo "=== Packaging APK ==="
-# -A assets: la pantalla del launcher (v5.1.0) vive en app/assets/launcher y tiene
-# que viajar DENTRO del APK. Sin esto, el WebView buscaría un fichero que no existe
-# y la pantalla de inicio saldría en negro.
-[ -d assets/launcher ] || { echo "FALLO: falta assets/launcher (la pantalla del launcher)"; exit 1; }
-# Todo lo que haya en assets/ viaja DENTRO del APK, incluidas las copias de
-# seguridad. Paso el 2026-09-19: un launcher.css.bak se coló en el APK y solo lo
-# cazó el script de verificación contando ficheros. Git ya guarda el histórico:
-# no hacen falta .bak aquí dentro.
-restos=$(find assets -type f \( -name "*.bak*" -o -name "*~" -o -name "*.orig" \) 2>/dev/null)
-[ -z "$restos" ] || { echo "FALLO: hay copias de seguridad en assets/ (se empaquetarían):"; echo "$restos"; exit 1; }
+# La pantalla es NATIVA (v5.4.0): ya no hay HTML dentro del APK, así que no se
+# empaqueta ningún asset. Con esto desaparecen de golpe dos problemas que dieron
+# guerra: el fichero que el WebView no encontraba (pantalla en negro) y las copias
+# de seguridad que viajaban dentro del APK sin que nadie las viera.
 "$AAPT" package -f \
     -M AndroidManifest.xml \
-    -A assets \
     -I $PLATFORM/android.jar \
     -F build/vgate-bridge-unaligned.apk
 
