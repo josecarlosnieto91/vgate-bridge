@@ -145,7 +145,9 @@ public class DiagnosticoActivity extends Activity {
         fila("Voltaje", texto(st.batteryV, " V"), LiveState.FUENTE_OBD, st.batteryVAt, CADUCA_MEDIO, pal);
         fila("Consumo", texto(st.consumptionL100, " L/100km"), LiveState.FUENTE_CAN, st.consumptionL100At, CADUCA_MEDIO, pal);
         fila("Autonomía", texto(st.rangeKm, " km"), LiveState.FUENTE_CAN, st.rangeKmAt, CADUCA_LENTO, pal);
-        fila("Combustible", texto(st.fuelLevelPct, " %"), LiveState.FUENTE_CAN, st.fuelLevelPctAt, CADUCA_LENTO, pal);
+        // El nivel de combustible llega por OBD (012F) y el consumo la autonomia por CAN:
+        // etiquetar mal la fuente es mentir en la pantalla que existe para no mentir.
+        fila("Combustible", texto(st.fuelLevelPct, " %"), LiveState.FUENTE_OBD, st.fuelLevelPctAt, CADUCA_LENTO, pal);
         fila("Temperatura exterior", st.outsideTempC == null ? "—" : st.outsideTempC + " °C",
                 LiveState.FUENTE_CAN, st.outsideTempCAt, CADUCA_LENTO, pal);
         fila("Puertas", estadoBool(st.doorOpen), LiveState.FUENTE_CAN, st.doorOpenAt, CADUCA_ESTADO, pal);

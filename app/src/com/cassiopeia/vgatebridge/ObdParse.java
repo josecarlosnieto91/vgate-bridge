@@ -43,6 +43,16 @@ public final class ObdParse {
         if ("2F".equals(pid)) {                     // nivel combustible: 1 byte, % = A*100/255
             return datos.length == 1 ? datos[0] * 100.0 / 255.0 : null;
         }
+        if ("04".equals(pid)) {                     // carga del motor: 1 byte, % = A*100/255
+            return datos.length == 1 ? datos[0] * 100.0 / 255.0 : null;
+        }
+        if ("42".equals(pid)) {                     // voltaje del módulo: 2 bytes, mV
+            // (256A+B)/1000 da voltios. Un valor fuera de rango no se cree: un coche
+            // de 12 V no lee 200 V, y devolverlo seria inventar un dato.
+            if (datos.length != 2) return null;
+            double v = ((datos[0] << 8) | datos[1]) / 1000.0;
+            return (v < 5.0 || v > 20.0) ? null : v;
+        }
         return null;                                // PID no soportado por esta clase
     }
 

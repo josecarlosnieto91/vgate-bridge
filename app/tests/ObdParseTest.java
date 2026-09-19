@@ -22,6 +22,7 @@ public class ObdParseTest {
         basuraNoRevienta();
         respuestaMultilinea();
         pidEquivocadoEsNull();
+        cargaYVoltaje();
         pidNoSoportadoEsNull();
 
         System.out.println();
@@ -102,6 +103,13 @@ public class ObdParseTest {
     /** Respuesta de otro PID: no vale. */
     private static void pidEquivocadoEsNull() {
         esNull(ObdParse.parse("41 05 43", "0D"), "llega 05 cuando se pide 0D");
+    }
+
+    /** Carga del motor y voltaje: los dos PIDs que faltaban para el diagnóstico. */
+    private static void cargaYVoltaje() {
+        igual(ObdParse.parse("41 04 80", "04"), 50.196, "carga 41 04 80 → ~50 %");
+        igual(ObdParse.parse("41 42 36 4C", "42"), 13.9, "voltaje 41 42 36 4C → 13,9 V");
+        esNull(ObdParse.parse("41 42 FF FF", "42"), "voltaje absurdo (200 V) → null, no se inventa");
     }
 
     /** PID que esta clase no interpreta: null explícito, no basura. */

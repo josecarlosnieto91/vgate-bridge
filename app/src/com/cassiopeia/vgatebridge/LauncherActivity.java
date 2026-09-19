@@ -72,6 +72,8 @@ public class LauncherActivity extends Activity {
     private static final long MS_MUSICA = 2000;   // la música, no
 
     private final LiveState st = LiveState.INSTANCIA;
+    /** El sondeo por el bridge: pregunta al ELM cuando el recolector no lo usa. */
+    private final Sondeo sondeo = new Sondeo();
     private final Handler h = new Handler();
     private final List<String> testigosPintados = new ArrayList<String>();
 
@@ -203,6 +205,8 @@ public class LauncherActivity extends Activity {
         h.post(cicloMusica);
         h.post(cicloReloj);
         h.post(cicloPizarra);
+        // El sondeo solo pregunta cuando el recolector no está usando el adaptador.
+        sondeo.arrancar();
         ocultarBarras();
     }
 
@@ -221,6 +225,9 @@ public class LauncherActivity extends Activity {
         }
         // Sin esto, la pantalla seguiría consultando el coche y el reproductor con la
         // tablet apagada o en segundo plano.
+        // Con la pantalla en segundo plano no se pregunta al coche: sería gastar el
+        // turno del adaptador para nada.
+        sondeo.parar();
         h.removeCallbacks(cicloEstado);
         h.removeCallbacks(cicloMusica);
         h.removeCallbacks(cicloReloj);
