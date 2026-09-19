@@ -28,6 +28,67 @@ import java.util.UUID;
 
 public class BridgeService extends Service {
     public static final int TCP_PORT = 22000;
+
+    // ── Petición directa desde la propia aplicación (vía 1) ──────────────────
+    //
+    // POR QUÉ ESTO Y NO UN SOCKET MÁS: el bridge atiende clientes TCP de uno en uno
+    // sobre el MISMO enlace Bluetooth. El recolector de Termux ya es cliente, así que
+    // el launcher no puede conectarse por su cuenta: o esperaría turno, o le robaría
+    // el turno y rompería la telemetría y las alertas de Telegram. En cambio, la
+    // pantalla vive en ESTE MISMO PROCESO: puede preguntarle al bridge directamente.
+    //
+    // LA REGLA, QUE ES TODO EL TRUCO: si hay un cliente TCP conectado, la aplicación
+    // NO toca el enlace y devuelve null. No se comparte la conversación con el ELM, se
+    // ESPERA A QUE ESTÉ LIBRE. Así no hay tramas mezcladas posibles, y el recolector
+    // nunca se entera de que estamos aquí.
+    //
+    // Y no hace falta nada más porque cada cliente que entra re-inicializa el ELM
+    // (ATZ, ATE0...): si una pregunta quedara a medias, el cliente siguiente limpia el
+    // adaptador al conectarse.
+    private static final java.util.concurrent.locks.ReentrantLock CANDADO =
+            new java.util.concurrent.locks.ReentrantLock();
+    private static volatile boolean HAY_CLIENTE_TCP = false;
+    private static volatile BridgeThread BRIDGE_VIVO;
+
+    /** Lo llama el servidor TCP al entrar y al salir un cliente. */
+    private static void marcarCliente(boolean hay) {
+        CANDADO.lock();
+        try {
+            HAY_CLIENTE_TCP = hay;
+        } finally {
+            CANDADO.unlock();
+        }
+    }
+
+    /** ¿Está el enlace ocupado por un cliente TCP (el recolector)? */
+    public static boolean enlaceOcupado() {
+        return HAY_CLIENTE_TCP;
+    }
+
+    /**
+     * Pregunta al ELM327 directamente, sin abrir ninguna conexión.
+     *
+     * Devuelve la respuesta cruda (la interpreta ObdParse, que ya está probado), o
+     * null si el enlace está ocupado o no hay puente. NUNCA espera indefinidamente ni
+     * interrumpe a un cliente.
+     *
+     * @param comando   por ejemplo "010D" (velocidad)
+     * @param timeoutMs cuánto esperar como mucho a la respuesta
+     */
+    public static String preguntar(String comando, long timeoutMs) {
+        BridgeThread b = BRIDGE_VIVO;
+        if (b == null || b.btIn == null || b.btOut == null) return null;
+        if (!CANDADO.tryLock()) return null;          // hay una pregunta en curso
+        try {
+            if (HAY_CLIENTE_TCP) return null;         // el enlace es del cliente: no se toca
+            return b.transaccion(comando, timeoutMs);
+        } catch (Throwable t) {
+            Diario.error("OBD", "fallo preguntando " + comando + " al ELM", t);
+            return null;
+        } finally {
+            CANDADO.unlock();
+        }
+    }
     public static final UUID SPP_UUID = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB");
     private static final int NOTIF_ID = 22000;
     private static final String CHANNEL_ID = "vgate_bridge";
@@ -269,10 +330,16 @@ public class BridgeService extends Service {
         private final String mac;
         private volatile boolean running = true;
         private BluetoothSocket btSocket;
+        // Los flujos del Bluetooth, como campos: la petición directa desde la app los
+        // necesita, y antes eran variables locales de bridgeLoop.
+        private volatile java.io.InputStream btIn;
+        private volatile java.io.OutputStream btOut;
         private ServerSocket serverSocket;
         private volatile Socket tcpSocket;
 
         BridgeThread(String mac) {
+            // El puente se hace localizable para la pregunta directa de la aplicación.
+            BRIDGE_VIVO = this;
             this.mac = mac;
         }
 
@@ -382,6 +449,40 @@ public class BridgeService extends Service {
          * Bluetooth. Solo devuelve false (y cierra) si el BT se cae o el server
          * falla; la desconexión de un cliente NO recicla el BT (v7).
          */
+        /**
+         * Una pregunta y su respuesta por el enlace Bluetooth.
+         *
+         * Solo se llama con el candado tomado y sin cliente TCP conectado, así que
+         * nadie más está leyendo ni escribiendo en este enlace.
+         */
+        String transaccion(String comando, long timeoutMs) {
+            try {
+                btOut.write((comando + "\r").getBytes());
+                btOut.flush();
+
+                StringBuilder sb = new StringBuilder(64);
+                long limite = System.currentTimeMillis() + timeoutMs;
+                byte[] buf = new byte[256];
+                while (System.currentTimeMillis() < limite) {
+                    if (btIn.available() > 0) {
+                        int n = btIn.read(buf);
+                        if (n > 0) {
+                            sb.append(new String(buf, 0, n));
+                            // El ELM termina cada respuesta con el prompt '>'
+                            if (sb.indexOf(">") >= 0) break;
+                        }
+                    } else {
+                        sleep(20);
+                    }
+                }
+                if (sb.length() == 0) return null;
+                return sb.toString();
+            } catch (Throwable t) {
+                Diario.error("OBD", "transaccion fallida con " + comando, t);
+                return null;
+            }
+        }
+
         private boolean serveClients() {
             try {
                 // Defensa: cerrar cualquier serverSocket previo que pudiera quedar vivo
@@ -397,11 +498,16 @@ public class BridgeService extends Service {
                     Socket client = serverSocket.accept();
                     client.setSoTimeout(5000);
                     tcpSocket = client; // para stopBridge
+                    // A partir de aquí el enlace es de este cliente: la aplicación deja
+                    // de preguntar hasta que se suelte. Es lo que evita que el launcher
+                    // y el recolector se pisen la conversación con el ELM.
+                    marcarCliente(true);
                     log("Cliente TCP conectado: " + client.getInetAddress().getHostAddress());
 
                     boolean btAlive = bridgeLoop(client);
                     closeSilently(client);
                     tcpSocket = null;
+                    marcarCliente(false);
 
                     if (!btAlive) {
                         log("BT caído durante cliente, reciclando puente...");
@@ -434,8 +540,11 @@ public class BridgeService extends Service {
         private boolean bridgeLoop(final Socket client) {
             final java.util.concurrent.atomic.AtomicBoolean btDead = new java.util.concurrent.atomic.AtomicBoolean(false);
             try {
-                final InputStream btIn = btSocket.getInputStream();
-                final OutputStream btOut = btSocket.getOutputStream();
+                // A los CAMPOS, no a variables locales: la pregunta directa desde la
+                // app lee de aquí. Y al ser campos, las clases anónimas de abajo los
+                // capturan sin necesidad de declararlos final.
+                btIn = btSocket.getInputStream();
+                btOut = btSocket.getOutputStream();
                 final InputStream tcpIn = client.getInputStream();
                 final OutputStream tcpOut = client.getOutputStream();
 
