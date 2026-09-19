@@ -30,7 +30,7 @@ VN=$(grep -o 'android:versionName="[^"]*"' "$APP/AndroidManifest.xml" | head -1 
 "$BT/apksigner" verify --print-certs "$APK" 2>/dev/null | grep -q "$FIRMA" \
     && ok "misma firma que la instalada" || bad "firma distinta: el update no actualizaría encima"
 for c in LauncherActivity MediaListener LiveState CanSnifferService \
-         InstrumentoView BarraView TestigoView MusicaView CajonView \
+         InstrumentoView BarraView TestigoView MusicaFranja CajonView NavegacionView \
          Ajustes Apps MediaSesion Paleta Pizarra; do
     "$BT/dexdump" -f "$APP/build/classes.dex" 2>/dev/null | grep -q "Lcom/cassiopeia/vgatebridge/$c;" \
         && ok "$c en el DEX" || bad "falta $c en el DEX"
@@ -87,7 +87,7 @@ grep -q "getActiveSessions" "$SRC/MediaSesion.java" && ok "la música se lee de 
     || bad "la música no sale de MediaSession"
 grep -q "SecurityException" "$SRC/MediaSesion.java" && ok "el permiso ausente se trata (no revienta)" \
     || bad "sin tratar el permiso ausente"
-grep -q "permiso" "$SRC/MediaSesion.java" && grep -q "Conceder acceso" "$SRC/MusicaView.java" \
+grep -q "permiso" "$SRC/MediaSesion.java" && grep -q "Conceder acceso" "$SRC/NavegacionView.java" \
     && ok "sin permiso se explica y se ofrece concederlo (no un hueco mudo)" || bad "permiso sin salida"
 grep -q "queryIntentActivities" "$SRC/Apps.java" && ok "las apps se leen del gestor de paquetes" \
     || bad "la lista de apps no sale del gestor de paquetes"
@@ -110,6 +110,28 @@ grep -q "KEEP_SCREEN_ON" "$SRC/LauncherActivity.java" && ok "la pantalla no se a
     || bad "sin mantener la pantalla encendida"
 grep -q "hayEstadoInyectado" "$SRC/Ajustes.java" && ok "los datos de prueba solo entran si existe su fichero" \
     || bad "la inyección de pruebas no está condicionada"
+
+echo "── Navegación y música compacta ──"
+grep -q "CATEGORY_NAVIGATION\|getPackageName" "$SRC/Navegacion.java" \
+    && ok "la navegación se lee de lo que publican las apps de mapas" || bad "sin lectura de navegación"
+grep -q "getActiveNotifications" "$SRC/MediaListener.java" \
+    && ok "el servicio de notificaciones expone la lista (llave con lector)" || bad "el servicio no lee nada"
+grep -q "no incrusta el mapa\|NO incrusta" "$SRC/NavegacionView.java" \
+    && ok "queda escrito por qué el mapa no se incrusta (para no reintentarlo)" || bad "sin explicar la limitación"
+[ ! -f "$SRC/MusicaView.java" ] && ok "el reproductor grande ya no existe" || bad "sigue el reproductor grande"
+grep -q "44" "$SRC/MusicaFranja.java" \
+    && ok "los controles de música siguen midiendo 44 puntos (compacto, no difícil)" \
+    || bad "controles pequeños: en el coche no se acierta"
+
+echo "── Permisos: los que se declaran, justificados ──"
+MAN="$APP/AndroidManifest.xml"
+grep -q "ACCESS_FINE_LOCATION" "$MAN" \
+    && bad "declara permiso de ubicación y ninguna función lo usa" \
+    || ok "sin permisos de ubicación (no hacen falta)"
+grep -q "BLUETOOTH" "$MAN" && grep -q "BluetoothAdapter" "$SRC/BridgeService.java" \
+    && ok "Bluetooth declarado y usado (el puente del OBD)" || bad "Bluetooth sin justificar"
+grep -q "INTERNET" "$MAN" && grep -q "ServerSocket" "$SRC/BridgeService.java" \
+    && ok "INTERNET declarado y usado (el servidor local del puente)" || bad "INTERNET sin justificar"
 
 echo "── Diario: que se pueda diagnosticar sin estar delante ──"
 grep -q "Diario.java" /dev/null; [ -f "$SRC/Diario.java" ] && ok "existe el diario de la app" || bad "sin diario"

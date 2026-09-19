@@ -82,7 +82,8 @@ public class LauncherActivity extends Activity {
 
     private InstrumentoView insRpm, insVel, insTemp;
     private BarraView barraComb;
-    private MusicaView musica;
+    private NavegacionView navegacion;
+    private MusicaFranja musica;
     private TextView reloj, fecha, datoConsumo, datoExt;
     private LinearLayout filaTestigos, filaAccesos;
     private CajonView cajon;
@@ -110,9 +111,15 @@ public class LauncherActivity extends Activity {
     private final Runnable cicloMusica = new Runnable() {
         @Override public void run() {
             try {
+                // La música y la navegación se leen en la misma vuelta: las dos vienen
+                // de lo que el sistema publica, así que se consultan juntas.
                 if (musica != null) musica.pintar(MediaSesion.leer(LauncherActivity.this));
+                if (navegacion != null) {
+                    navegacion.pintar(Navegacion.leer(LauncherActivity.this,
+                            ajustes.navegacionApps()), ajustes.navegacion());
+                }
             } catch (Throwable t) {
-                Diario.error("Musica", "fallo al leer el reproductor", t);
+                Diario.error("Musica", "fallo al leer el reproductor o la navegacion", t);
             }
             h.postDelayed(this, MS_MUSICA);
         }
@@ -242,48 +249,69 @@ public class LauncherActivity extends Activity {
         lpPrincipal.topMargin = dp(4);
         panel.addView(principal, lpPrincipal);
 
-        // ── Columna izquierda: régimen y temperatura del motor ───────────────
+        // ── Columna izquierda: la conducción. La velocidad manda. ────────────
         LinearLayout izq = new LinearLayout(this);
         izq.setOrientation(LinearLayout.VERTICAL);
         principal.addView(izq, new LinearLayout.LayoutParams(0,
-                ViewGroup.LayoutParams.MATCH_PARENT, 1.05f));
+                ViewGroup.LayoutParams.MATCH_PARENT, 1.15f));
+
+        insVel = new InstrumentoView(this, pal, "Velocidad", "km/h",
+                0, 180, Double.valueOf(VEL_AVISO), true, true);
+        LinearLayout.LayoutParams lpVel = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f);
+        lpVel.bottomMargin = dp(4);
+        izq.addView(insVel, lpVel);
+
+        // Régimen y refrigerante, pequeños y en la misma fila: son de reojo, no
+        // protagonistas. Antes ocupaban una columna entera para ellos solos.
+        LinearLayout filaMenuda = new LinearLayout(this);
+        filaMenuda.setOrientation(LinearLayout.HORIZONTAL);
+        LinearLayout.LayoutParams lpMenuda = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(104));
+        lpMenuda.bottomMargin = dp(4);
+        izq.addView(filaMenuda, lpMenuda);
 
         insRpm = new InstrumentoView(this, pal, "Régimen", "rpm ×1000",
                 0, 6, Double.valueOf(RPM_ROJO / 1000.0), true, false);
-        LinearLayout.LayoutParams lpRpm = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f);
-        lpRpm.bottomMargin = dp(6);
-        izq.addView(insRpm, lpRpm);
+        LinearLayout.LayoutParams lpRpm = new LinearLayout.LayoutParams(0,
+                ViewGroup.LayoutParams.MATCH_PARENT, 1f);
+        lpRpm.rightMargin = dp(6);
+        filaMenuda.addView(insRpm, lpRpm);
 
         insTemp = new InstrumentoView(this, pal, "Refrigerante", "°C",
                 40, 120, Double.valueOf(REFRIGERANTE_AVISO), true, false);
-        izq.addView(insTemp, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+        filaMenuda.addView(insTemp, new LinearLayout.LayoutParams(0,
+                ViewGroup.LayoutParams.MATCH_PARENT, 1f));
 
-        // ── Centro: la velocidad, el instrumento principal ───────────────────
-        insVel = new InstrumentoView(this, pal, "Velocidad", "km/h",
-                0, 180, Double.valueOf(VEL_AVISO), true, true);
-        LinearLayout.LayoutParams lpVel = new LinearLayout.LayoutParams(0,
-                ViewGroup.LayoutParams.MATCH_PARENT, 1.6f);
-        lpVel.leftMargin = dp(8);
-        lpVel.rightMargin = dp(8);
-        principal.addView(insVel, lpVel);
-
-        // ── Columna derecha: combustible, autonomía y música ─────────────────
-        LinearLayout der = new LinearLayout(this);
-        der.setOrientation(LinearLayout.VERTICAL);
-        principal.addView(der, new LinearLayout.LayoutParams(0,
-                ViewGroup.LayoutParams.MATCH_PARENT, 1.1f));
-
+        // El combustible, en barra: baja en días, no merece aguja.
         barraComb = new BarraView(this, pal, "Combustible", "km", Double.valueOf(COMBUSTIBLE_BAJO));
-        LinearLayout.LayoutParams lpBarra = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, dp(62));
-        lpBarra.bottomMargin = dp(8);
-        der.addView(barraComb, lpBarra);
+        izq.addView(barraComb, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(46)));
 
-        musica = new MusicaView(this, pal);
-        der.addView(musica, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+        // ── Columna derecha: LA NAVEGACIÓN manda; la música, en una franja ───
+        boolean hayNavegacion = ajustes.visible("navegacion");
+        boolean hayMusica = ajustes.visible("musica");
+
+        if (hayNavegacion || hayMusica) {
+            LinearLayout der = new LinearLayout(this);
+            der.setOrientation(LinearLayout.VERTICAL);
+            principal.addView(der, new LinearLayout.LayoutParams(0,
+                    ViewGroup.LayoutParams.MATCH_PARENT, 1f));
+
+            if (hayNavegacion) {
+                navegacion = new NavegacionView(this, pal, ajustes);
+                LinearLayout.LayoutParams lpNav = new LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f);
+                lpNav.bottomMargin = dp(6);
+                der.addView(navegacion, lpNav);
+            }
+
+            if (hayMusica) {
+                musica = new MusicaFranja(this, pal);
+                der.addView(musica, new LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT, dp(56)));
+            }
+        }
 
         // ── Tira de datos ────────────────────────────────────────────────────
         LinearLayout tira = new LinearLayout(this);
@@ -666,6 +694,8 @@ public class LauncherActivity extends Activity {
         insRpm.paleta(pal);
         insTemp.paleta(pal);
         barraComb.paleta(pal);
+        if (musica != null) musica.paleta(pal);
+        if (navegacion != null) navegacion.paleta(pal);
         if (cajon != null) {
             cajon.removeAllViews();
             raiz.removeView(cajon);

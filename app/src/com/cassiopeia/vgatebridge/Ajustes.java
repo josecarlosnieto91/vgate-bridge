@@ -46,6 +46,46 @@ final class Ajustes {
         return v == null ? "auto" : v;
     }
 
+    /** Aplicación de navegación preferida ("navegacion"), o null si no se elige. */
+    String navegacion() {
+        return leerJson("launcher.json", "navegacion");
+    }
+
+    /** Paquetes que se consideran de navegación ("navegacionApps"), o null. */
+    List<String> navegacionApps() {
+        String trozo = leerJson("launcher.json", "navegacionApps");
+        return trozo == null ? null : paquetesDe(trozo);
+    }
+
+    /**
+     * Qué elementos opcionales se quieren ver ("visibles").
+     *
+     * Se configura por lista porque es lo que se pide de verdad: quitar de en medio lo
+     * que no se usa. Un elemento que no aparece en la lista se considera visible, que
+     * es el comportamiento seguro: una configuración a medias no deja la pantalla
+     * vacía sin que nadie lo entienda.
+     */
+    boolean visible(String elemento) {
+        String trozo = leerJson("launcher.json", "visibles");
+        if (trozo == null) return true;
+        List<String> lista = paquetesDe(trozo);
+        for (int i = 0; i < lista.size(); i++) {
+            if (lista.get(i).equals(elemento)) return true;
+        }
+        return false;
+    }
+
+    /**
+     * Con qué arranca la pantalla ("inicio"): "dashboard" (por defecto), "apps" o
+     * "navegacion".
+     */
+    String inicio() {
+        String v = leerJson("launcher.json", "inicio");
+        if (v == null) return "dashboard";
+        if (v.equals("apps") || v.equals("navegacion")) return v;
+        return "dashboard";
+    }
+
     /** Extrae los paquetes de un trozo de JSON tipo ["a.b","c.d"]. */
     private static List<String> paquetesDe(String trozo) {
         List<String> salida = new ArrayList<String>();
