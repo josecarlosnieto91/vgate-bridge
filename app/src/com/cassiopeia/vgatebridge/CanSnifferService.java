@@ -78,6 +78,7 @@ public class CanSnifferService extends Service {
 
     /** Una fila del censo: cuántos mensajes, de qué tamaño y cómo son. */
     private static final class Censo {
+        String tipo = "";   // v5.0.9: bytes/int/long/texto/vacio
         long n;
         int largo;
         String hex = "";
@@ -87,6 +88,7 @@ public class CanSnifferService extends Service {
     }
 
     private TWUtil tw;
+    private int ultimoRcVelocidad = Integer.MIN_VALUE;
     private PrintWriter csv;
     /** Cadencia/duplicados: lógica pura en CanWriteGate (probada aparte). */
     private final CanWriteGate gate = new CanWriteGate();
@@ -165,6 +167,16 @@ public class CanSnifferService extends Service {
                 tw.addHandler("CanSniffer", handler);
                 tw.start();
                 Log.i(TAG, "CAN sniffer activo");
+                // v5.0.9: los canales que no llegan solos hay que PEDIRLOS. La
+                // comunidad documenta write(520, 0) como "pedir velocidad" en este
+                // framework TW. Se repite cada 10 s y el censo dira si ESTA unidad
+                // responde. No interpreta nada: solo pregunta.
+                handler.postDelayed(new Runnable() {
+                    @Override public void run() {
+                        pedirVelocidad();
+                        handler.postDelayed(this, 10000);
+                    }
+                }, 5000);
             } else {
                 tw = null;
                 Log.e(TAG, "open() falló — TWUtil sin permisos");
@@ -173,6 +185,19 @@ public class CanSnifferService extends Service {
             Log.e(TAG, "error arrancando TWUtil", t);
             tw = null;
         }
+    }
+
+    /** Pide el dato 520 (velocidad) al decodificador. Solo registra el codigo
+     *  de retorno cuando cambia, para no inundar el log. */
+    private void pedirVelocidad() {
+        try {
+            if (tw == null) return;
+            int rc = tw.write(520, 0);
+            if (rc != ultimoRcVelocidad) {
+                ultimoRcVelocidad = rc;
+                Log.i(TAG, "peticion 520 (velocidad) = " + rc);
+            }
+        } catch (Throwable ignored) {}
     }
 
     private void stopCan() {
@@ -189,8 +214,30 @@ public class CanSnifferService extends Service {
     /** Anota un mensaje en el censo. Nunca debe afectar a la producción. */
     private void anotaCenso(Message msg) {
         try {
-            if (!(msg.obj instanceof byte[])) return;
-            byte[] d = (byte[]) msg.obj;
+            // v5.0.9: antes se anotaban SOLO los arrays de bytes y el resto se
+            // descartaba en silencio — si un canal entrega texto o un numero, el
+            // censo no lo veia. Ahora se registra CUALQUIER payload con su tipo.
+            Object o = msg.obj;
+            String tipo, hex;
+            byte[] d = null;
+            if (o instanceof byte[]) {
+                d = (byte[]) o;
+                tipo = "bytes";
+                StringBuilder sb0 = new StringBuilder();
+                for (byte b : d) sb0.append(String.format(Locale.US, "%02X", b));
+                hex = sb0.toString();
+            } else if (o instanceof Integer) {
+                tipo = "int"; hex = String.valueOf((Integer) o);
+            } else if (o instanceof Long) {
+                tipo = "long"; hex = String.valueOf((Long) o);
+            } else if (o instanceof String) {
+                tipo = "texto"; hex = ((String) o).replace(',', ' ');
+            } else if (o == null) {
+                tipo = "vacio"; hex = "";
+            } else {
+                tipo = o.getClass().getSimpleName();
+                hex = String.valueOf(o).replace(',', ' ');
+            }
             String clave = msg.what + "/" + msg.arg1;
             Censo c = censo.get(clave);
             if (c == null) {
@@ -198,15 +245,11 @@ public class CanSnifferService extends Service {
                 censo.put(clave, c);
             }
             c.n++;
-            c.largo = d.length;
-            boolean cambio = c.ultimo == null || !java.util.Arrays.equals(c.ultimo, d);
-            if (cambio) {
-                c.ultimo = d.clone();
-                StringBuilder sb = new StringBuilder();
-                for (byte b : d) sb.append(String.format(Locale.US, "%02X", b));
-                c.hex = sb.toString();
-            }
-            if (d.length > 0) {
+            c.tipo = tipo;
+            if (d != null) c.largo = d.length;
+            boolean cambio = !hex.equals(c.hex);
+            if (cambio) c.hex = hex;
+            if (d != null && d.length > 0) {
                 int v = d[0] & 0xFF;
                 if (v < c.minByte) c.minByte = v;
                 if (v > c.maxByte) c.maxByte = v;
@@ -273,12 +316,12 @@ public class CanSnifferService extends Service {
             if (dir == null) return;
             if (!dir.exists()) dir.mkdirs();
             PrintWriter out = new PrintWriter(new FileWriter(new File(dir, CENSUS_NAME), false), true);
-            out.println("what,arg1,n,bytes,hex,byte0_min,byte0_max");
+            out.println("what,arg1,n,bytes,tipo,hex,byte0_min,byte0_max");
             for (java.util.Map.Entry<String, Censo> e : censo.entrySet()) {
                 String[] k = e.getKey().split("/");
                 Censo c = e.getValue();
-                out.printf(Locale.US, "%s,%s,%d,%d,%s,%d,%d%n",
-                        k[0], k[1], c.n, c.largo, c.hex,
+                out.printf(Locale.US, "%s,%s,%d,%d,%s,%s,%d,%d%n",
+                        k[0], k[1], c.n, c.largo, c.tipo, c.hex,
                         c.minByte == Integer.MAX_VALUE ? -1 : c.minByte,
                         c.maxByte == Integer.MIN_VALUE ? -1 : c.maxByte);
             }
