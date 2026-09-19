@@ -183,6 +183,16 @@ vgate-bridge/
 └── LICENSE
 ```
 
+## Para quien continúe el trabajo
+
+Este repo contiene también el **launcher de la tablet del coche** (la pantalla de
+inicio con el cuadro de mandos, montada en un Citroën C4 Grand Picasso). Si vas a
+tocar esa parte, empieza por:
+
+**[`docs/HANDOFF-LAUNCHER.md`](docs/HANDOFF-LAUNCHER.md)** — qué es, de dónde sale
+cada dato, qué está hecho y qué falta, las trampas que ya costaron tiempo y cómo se
+verifica sin tener el coche delante.
+
 ## Licencia
 
 MIT
