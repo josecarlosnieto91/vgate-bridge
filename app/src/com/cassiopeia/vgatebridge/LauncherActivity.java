@@ -52,11 +52,14 @@ import java.util.Locale;
  */
 public class LauncherActivity extends Activity {
 
-    // Umbrales REALES del coche (los mismos que tiene calibrados el recolector).
-    private static final double RPM_ROJO = 4800;
-    private static final double VEL_AVISO = 120;
-    private static final double REFRIGERANTE_AVISO = 95;
-    private static final double COMBUSTIBLE_BAJO = 15;
+    // Umbrales REALES del coche. Los valores por defecto son los calibrados en
+    // obd_vehicle_config.json en Cassiopeia, pero se pueden sobrescribir desde
+    // launcher.json sin recompilar. Antes eran constantes aquí dentro, así que
+    // cambiarlos en Cassiopeia no cambiaba nada en la pantalla y nadie se enteraba.
+    private double rpmRojo = 4800;
+    private double velAviso = 120;
+    private double refrigeranteAviso = 95;
+    private double combustibleBajo = 15;
 
     private static final String[] ACCESOS_POR_DEFECTO = {
             "com.google.android.apps.maps",   // Maps
@@ -170,6 +173,14 @@ public class LauncherActivity extends Activity {
         Diario.cabecera(this);
         // El ordenador de viaje recupera lo que sobrevivió al apagón anterior.
         Viajes.INSTANCIA.cargar(getExternalFilesDir(null));
+        // Los umbrales, de la configuracion: si el coche cambia de comportamiento (o de
+        // aceite), se ajustan en launcher.json sin recompilar el APK.
+        rpmRojo = ajustes.umbral("rpm_rojo", 4800);
+        velAviso = ajustes.umbral("vel_aviso", 120);
+        refrigeranteAviso = ajustes.umbral("refrigerante_aviso", 95);
+        combustibleBajo = ajustes.umbral("combustible_bajo", 15);
+        Diario.info("Umbrales", "regimen rojo " + rpmRojo + " · velocidad " + velAviso
+                + " · refrigerante " + refrigeranteAviso + " · combustible " + combustibleBajo);
         // CRÍTICO para una instalación real: si el fichero de datos de prueba existe
         // en la tablet, la pantalla estaría enseñando datos inventados. En producción
         // no debe estar nunca, y si está, tiene que chillar.
@@ -268,7 +279,7 @@ public class LauncherActivity extends Activity {
                 ViewGroup.LayoutParams.MATCH_PARENT, 1.15f));
 
         insVel = new InstrumentoView(this, pal, "Velocidad", "km/h",
-                0, 180, Double.valueOf(VEL_AVISO), true, true);
+                0, 180, Double.valueOf(velAviso), true, true);
         LinearLayout.LayoutParams lpVel = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f);
         lpVel.bottomMargin = dp(4);
@@ -284,19 +295,19 @@ public class LauncherActivity extends Activity {
         izq.addView(filaMenuda, lpMenuda);
 
         insRpm = new InstrumentoView(this, pal, "Régimen", "rpm ×1000",
-                0, 6, Double.valueOf(RPM_ROJO / 1000.0), true, false);
+                0, 6, Double.valueOf(rpmRojo / 1000.0), true, false);
         LinearLayout.LayoutParams lpRpm = new LinearLayout.LayoutParams(0,
                 ViewGroup.LayoutParams.MATCH_PARENT, 1f);
         lpRpm.rightMargin = dp(6);
         filaMenuda.addView(insRpm, lpRpm);
 
         insTemp = new InstrumentoView(this, pal, "Refrigerante", "°C",
-                40, 120, Double.valueOf(REFRIGERANTE_AVISO), true, false);
+                40, 120, Double.valueOf(refrigeranteAviso), true, false);
         filaMenuda.addView(insTemp, new LinearLayout.LayoutParams(0,
                 ViewGroup.LayoutParams.MATCH_PARENT, 1f));
 
         // El combustible, en barra: baja en días, no merece aguja.
-        barraComb = new BarraView(this, pal, "Combustible", "km", Double.valueOf(COMBUSTIBLE_BAJO));
+        barraComb = new BarraView(this, pal, "Combustible", "km", Double.valueOf(combustibleBajo));
         izq.addView(barraComb, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, dp(46)));
 
@@ -674,13 +685,13 @@ public class LauncherActivity extends Activity {
         if (Boolean.TRUE.equals(st.doorOpen)) activos.add("Puerta|" + TestigoView.PUERTA);
         if (Boolean.TRUE.equals(st.lightsOn)) activos.add("Luces|" + TestigoView.LUCES);
         // Los avisos por umbral sí dependen de medidas: con el dato viejo, se callan.
-        if (fresco && st.coolantC != null && st.coolantC.doubleValue() >= REFRIGERANTE_AVISO) {
+        if (fresco && st.coolantC != null && st.coolantC.doubleValue() >= refrigeranteAviso) {
             activos.add("Temperatura|" + TestigoView.AVISO);
         }
-        if (fresco && st.fuelLevelPct != null && st.fuelLevelPct.doubleValue() <= COMBUSTIBLE_BAJO) {
+        if (fresco && st.fuelLevelPct != null && st.fuelLevelPct.doubleValue() <= combustibleBajo) {
             activos.add("Combustible|" + TestigoView.AVISO);
         }
-        if (fresco && st.speedKmh != null && st.speedKmh.doubleValue() >= VEL_AVISO) {
+        if (fresco && st.speedKmh != null && st.speedKmh.doubleValue() >= velAviso) {
             activos.add("Velocidad|" + TestigoView.AVISO);
         }
         if (activos.equals(testigosPintados)) return;

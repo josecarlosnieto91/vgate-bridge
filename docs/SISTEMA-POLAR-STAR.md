@@ -122,12 +122,20 @@ como si fuera actual es la única mentira que este sistema no se permite.
 Termux es un Linux dentro de Android sin root. Aquí hace de fontanería:
 
 - **`sshd`** en el puerto 8022, para entrar por Tailscale como `polar-star`.
-- **`crond`**: las tareas periódicas.
-- **El vigilante**: comprueba que los servicios de la app siguen vivos y los levanta si no.
-- **El GPS logger** *(por confirmar)*.
+- **`crond`**: ejecuta `polar_boot_extra.sh` **cada minuto**, que es el mecanismo que
+  mantiene vivo todo lo demás.
+- **`polar_boot_extra.sh`** hace tres cosas, y conviene sabérselas: arranca `crond` si no
+  está; se instala a sí mismo en la tabla de cron si no está; y arranca `sshd` si no está.
+  Pero **no** arranca los servicios de la app: de eso se encarga Android con la app
+  declarada como pantalla de inicio.
+- **El vigilante** *(por confirmar en su forma actual)*: comprueba que los servicios de la
+  app siguen vivos.
 - **El JobScheduler del sistema** apunta a `polar_job.sh` cada 15 minutos, que es la vía
   que tiene Android de despertar algo aunque Termux haya sido matado.
-- **`polar_boot_extra.sh`**: lo que hay que hacer al arrancar la tablet.
+
+**El GPS no es un programa aparte**: el recolector lo pide por SSH con `termux-location`
+(`-p passive`, `-p network`, `-p gps`). Verificado leyendo el recolector. Esto importa
+porque aclara de dónde sale la posición: la pide el lado de Cassiopeia, no el launcher.
 
 > ⚠️ **Trampa conocida:** Android mata Termux cuando le apetece. Ya pasó, dos días
 > seguidos. Por eso el trabajo crítico no vive solo en Termux: el JobScheduler y el
@@ -149,11 +157,30 @@ Aquí es donde los datos se guardan y se piensan:
 - **La webapp** en el puerto 8765 y **Janus** en el 8770.
 - **Los análisis**: resúmenes de viaje, consumo real (8,29 L/100 km medidos por
   repostajes, frente a los 4,2-5,7 que marca el cuadro del coche), detección de repostajes.
-- **`~/repos/obd-telemetry`**: el proyecto de recogida y análisis.
+- **`~/repos/obd-telemetry`**: el proyecto de recogida y análisis. **Aquí vive el
+  recolector, y no en `~/.hermes/scripts`.**
 
-*(Por confirmar: la ubicación exacta del código del recolector. En `~/.hermes/scripts` no
-está; los documentos del proyecto dicen que vive ahí. Hay que resolverlo antes de tocar
-nada de esa parte, y es el primer punto de la revisión crítica.)*
+### El recolector, en detalle (verificado)
+
+- **Dónde:** `~/repos/obd-telemetry/collector/`, y se ejecuta con el python del entorno de
+  Hermes (`~/.hermes/hermes-agent/venv/bin/python3`).
+- **Cómo se lanza:** los envoltorios de `~/.hermes/scripts/` (`obd_collector_cron.sh`,
+  `obd_local_import.sh`) hacen un `exec` al python del venv con el script de verdad. Es
+  decir: los cronjobs de Hermes llaman al envoltorio, y el envoltorio llama al recolector.
+- **Cómo alcanza la tablet:** abre un **socket TCP** contra la dirección y el puerto que
+  lee de la configuración (`obd.host` / `obd.port`), que apunta al puerto 22000 de la
+  tablet por Tailscale. Es decir: **es un cliente TCP del bridge**, exactamente igual que
+  si fuera una herramienta externa. No hay nada especial ni privilegiado en él.
+- **Y además entra por SSH** (`ssh polar-star ...`) para pedir la posición con
+  `termux-location`.
+- **Lo que hay en esa carpeta:** `obd_collector.py` y `obd_local_collector.py` (los
+  recolectores), `obd2_client.py` (el cliente del puerto OBD), `car_status.py` (el
+  odómetro), `fuel_consumption.py` y `fuel_prices.py`, `merge_sessions.py`,
+  `check_polar_star.py` (comprobación de salud) y `deploy_obd_v3.sh` (despliegue).
+
+**Consecuencia para el desarrollo:** el recolector **no** es un componente de la app. Es un
+cliente externo por TCP. Eso confirma que la decisión tomada (que la app no compita por el
+puerto) es la correcta, y explica por qué la vía 1 va por dentro del proceso.
 
 ---
 
@@ -177,6 +204,31 @@ Biodevas; Andromeda, réplicas). Se usa **MagicDNS**, no direcciones IP: `polar-
 estas alertas. Por eso la decisión tomada es **no competir por la conexión**.
 
 ---
+
+## 7 bis. Quién dispara qué (esto confunde a todo el mundo)
+
+Hay tres mecanismos de temporización distintos y conviene no mezclarlos:
+
+| Mecanismo | Dónde | Para qué |
+|---|---|---|
+| **Cronjobs de Hermes** | Cassiopeia | Recoger, importar, analizar y avisar por Telegram. Cada 5 o 10 minutos |
+| **`crond` de Termux** | La tablet | Solo mantener viva la fontanería: `polar_boot_extra.sh` cada minuto |
+| **JobScheduler de Android** | La tablet | Despertar `polar_job.sh` cada 15 minutos, aunque Android haya matado Termux |
+
+**Quién es el dueño de qué, para no duplicar trabajo:**
+
+- **Los datos del motor (OBD)**: el recolector de Cassiopeia. La app los pide también para
+  la pantalla, pero **cediendo el turno** (vía 1). Una sola conexión, un solo dueño del
+  enlace: el bridge.
+- **Los viajes y las sesiones**: **Cassiopeia**, en su base de datos. El ordenador de viaje
+  del launcher es **local e informativo**: cuenta lo que ve esa tablet y sirve para
+  consultarlo en el coche, pero la cifra canónica es la de la base de datos. Si algún día
+  discrepan, manda Cassiopeia.
+- **La posición**: el recolector, por SSH con `termux-location`. El launcher **no usa GPS**
+  para nada: su velocidad es la del motor.
+- **Los umbrales del coche** (régimen rojo, aviso de refrigerante, combustible bajo...):
+  la fuente canónica es `obd_vehicle_config.json` en Cassiopeia. El launcher los lee de su
+  propio `launcher.json`, y **sus valores por defecto deben coincidir** con los de allí.
 
 ## 8. Cómo se desarrolla y cómo se verifica
 
@@ -227,6 +279,47 @@ los repositorios son la fuente de verdad; lo que viaja a GitHub es escaparate.
   búsqueda en el cajón, unidades y formato horario.
 
 ---
+
+## 9 bis. Cómo se entra, y cómo se monta desde cero
+
+### Entrar
+
+```bash
+ssh polar-star                 # la tablet (alias de ~/.ssh/config, por Tailscale)
+ssh orion-biodevas             # servidor de producción de Biodevas
+ssh andromeda                  # réplicas
+```
+
+Dentro de la tablet, lo que se suele mirar:
+
+| Qué | Dónde |
+|---|---|
+| Carpeta de trabajo de la app | `/sdcard/Android/data/com.cassiopeia.vgatebridge/files/` |
+| Diario de la app | .../`diagnosticos.txt` (sobrevive al apagón) |
+| Lo que la pantalla dibuja | .../`pintado.json` |
+| Datos de prueba (solo emulador) | .../`test_state.json`, `test_media.json` |
+| CSV del sniffer CAN | la misma carpeta (`can_census.csv`, `can_changes.csv`, `can_readings.csv`) |
+| Termux | `/data/data/com.termux/files/home/` |
+
+El logcat se mira con `adb logcat -s PolarStar` (por USB) o desde Termux, que en esta ROM
+puede leer el log de otra aplicación.
+
+### Montar desde cero
+
+1. **Instalar la app** (`make build` y el APK de `app/build/`) **con la misma firma** que la
+   instalada, o habrá que desinstalar y se perderá la MAC del coche.
+2. **Conceder el acceso a notificaciones** (Ajustes → Notificaciones → Acceso a
+   notificaciones). Sin él no hay música ni estado de navegación: la pantalla lo dice y
+   ofrece el enlace, pero hay que darlo a mano.
+3. **Fijar la app como pantalla de inicio** (Ajustes → Aplicación de inicio). **No
+   desinstalar** el launcher de la ROM: es la salida de emergencia.
+4. **Emparejar el Vgate** por Bluetooth, si se ha cambiado el adaptador.
+5. **Desplegar Termux**: `polar_boot_extra.sh` (arranca crond, se pone en el cron y levanta
+   sshd), la clave de Tailscale y el alias `polar-star`.
+6. **Comprobar el estado**: abrir el diagnóstico (pulsación larga en el engranaje) y ver
+   que OBD y CAN digan algo coherente con lo que hace el coche.
+7. **Comprobar las alertas**: que el recolector llegue a Cassiopeia y que los cronjobs de
+   Telegram sigan avisando.
 
 ## 10. Reglas que no se rompen
 

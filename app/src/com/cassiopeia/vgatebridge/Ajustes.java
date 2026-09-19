@@ -46,6 +46,26 @@ final class Ajustes {
         return v == null ? "auto" : v;
     }
 
+    /**
+     * Un umbral del coche, leído de launcher.json.
+     *
+     * Los valores por defecto son los CANÓNICOS, los que están calibrados en
+     * obd_vehicle_config.json en Cassiopeia. Estaban escritos como constantes dentro de
+     * la pantalla, lo que significa que cambiarlos allí no cambiaba nada aquí y nadie se
+     * enteraba: tres copias del mismo número en tres sitios, y dos de ellas mintiendo en
+     * silencio. Ahora se leen de la configuración y el valor por defecto está en un solo
+     * sitio: esta tabla, que debe coincidir con la de Cassiopeia.
+     */
+    double umbral(String nombre, double porDefecto) {
+        String v = leerJson("launcher.json", nombre);
+        if (v == null) return porDefecto;
+        try {
+            return Double.parseDouble(v);
+        } catch (NumberFormatException e) {
+            return porDefecto;   // un valor ilegible no cambia el comportamiento
+        }
+    }
+
     /** Aplicación de navegación preferida ("navegacion"), o null si no se elige. */
     String navegacion() {
         return leerJson("launcher.json", "navegacion");

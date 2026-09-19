@@ -133,6 +133,22 @@ grep -q "BLUETOOTH" "$MAN" && grep -q "BluetoothAdapter" "$SRC/BridgeService.jav
 grep -q "INTERNET" "$MAN" && grep -q "ServerSocket" "$SRC/BridgeService.java" \
     && ok "INTERNET declarado y usado (el servidor local del puente)" || bad "INTERNET sin justificar"
 
+echo "── Una sola copia de cada cosa (deuda de documentación y de datos) ──"
+# Los umbrales del coche estaban escritos como constantes dentro de la pantalla, así que
+# cambiarlos en obd_vehicle_config.json no cambiaba nada aquí y nadie se enteraba.
+grep -q "ajustes.umbral" "$SRC/LauncherActivity.java" \
+    && ok "los umbrales del coche se leen de la configuración (no escritos en el código)" \
+    || bad "los umbrales vuelven a estar escritos dentro de la pantalla"
+grep -qE "static final double (RPM_ROJO|VEL_AVISO|REFRIGERANTE_AVISO|COMBUSTIBLE_BAJO)" "$SRC/LauncherActivity.java" \
+    && bad "hay umbrales como constantes otra vez: tres copias del mismo número" \
+    || ok "ningún umbral como constante en la pantalla"
+# El mapa del sistema y la guía del launcher son la fuente de verdad: si desaparecen,
+# cualquiera que llegue tendrá que reconstruir el contexto preguntando.
+DOCS="$APP/../docs"
+for d in SISTEMA-POLAR-STAR.md HANDOFF-LAUNCHER.md CAMBIO-BRIDGE-VIA1.md; do
+    [ -f "$DOCS/$d" ] && ok "documento $d" || bad "falta el documento $d"
+done
+
 echo "── Diario: que se pueda diagnosticar sin estar delante ──"
 grep -q "Diario.java" /dev/null; [ -f "$SRC/Diario.java" ] && ok "existe el diario de la app" || bad "sin diario"
 grep -q "diagnosticos.txt" "$SRC/LauncherActivity.java" && ok "el diario se vuelca a fichero (sobrevive al apagón)" \
