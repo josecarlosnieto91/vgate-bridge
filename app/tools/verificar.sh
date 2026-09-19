@@ -57,12 +57,25 @@ grep -q "getLaunchIntentForPackage" "$SRC/WebBridge.java" && ok "abrirApp valida
 grep -q "ajustesInicio" "$SRC/WebBridge.java" && ok "salida de emergencia al launcher de la ROM" || bad "sin salida de emergencia"
 
 echo "── Compatibilidad con el WebView de Android 10 (Chromium 74) ──"
-# `gap` en FLEX no existe hasta Chromium 84. Los de grid sí (desde el 57). Costó
-# un fallo real: los huecos internos no se aplicaban y la pantalla parecía rota
-# sin serlo. Medido en emulador, no deducido.
-grep -B8 "^\s*gap:" "$CSS" | grep -q "display: flex" \
-    && bad "hay 'gap' en un contenedor flex: NO funciona en Chromium 74" \
-    || ok "ningún 'gap' en flex (los de grid sí valen)"
+# `gap` en FLEX no existe hasta Chromium 84; en GRID sí (desde el 57). Se analiza
+# regla por regla: mirar "las 8 líneas anteriores" da falsos positivos —una regla
+# de grid con gap precedida de otra con display:flex se marcaba como error— y eso
+# ya nos costó una tarde. Un instrumento que miente es peor que no tenerlo.
+flex_con_gap=$(python3 - "$CSS" <<'PY'
+import re, sys
+css = open(sys.argv[1]).read()
+malos = []
+for bloque in re.finditer(r"([^{}]+)\{([^}]*)\}", css):
+    selector = bloque.group(1).strip().splitlines()[-1].strip()
+    cuerpo = bloque.group(2)
+    if re.search(r"(^|;|\s)gap\s*:", cuerpo) and re.search(r"display\s*:\s*flex", cuerpo):
+        malos.append(selector)
+print(" ".join(malos))
+PY
+)
+[ -z "$flex_con_gap" ] \
+    && ok "ningún 'gap' en flex (los de grid sí valen en Chromium 74)" \
+    || bad "'gap' en contenedor flex (no funciona en Chromium 74): $flex_con_gap"
 grep -qE "=>|\\\$\{" "$JS" \
     && bad "flechas de función o plantillas de texto en el JS (Chromium 74 no las traga)" \
     || ok "JS conservador: sin flechas ni plantillas"
