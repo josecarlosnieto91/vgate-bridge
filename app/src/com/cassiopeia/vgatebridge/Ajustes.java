@@ -125,18 +125,23 @@ final class Ajustes {
         st.speedKmh = null; st.rpm = null; st.coolantC = null;
         st.consumptionL100 = null; st.rangeKm = null; st.outsideTempC = null;
         st.fuelLevelPct = null; st.doorOpen = null; st.lightsOn = null;
+        // Se escribe con los métodos que sellan la hora: un valor inyectado es, para
+        // la pantalla, un valor que acaba de llegar. Si se escribieran los campos a
+        // pelo, el diagnóstico los daría por "sin dato" y la prueba no probaría nada.
         Double v;
-        v = num(t, "speed");       if (v != null) st.speedKmh = v;
-        v = num(t, "rpm");         if (v != null) st.rpm = v;
-        v = num(t, "coolant");     if (v != null) st.coolantC = v;
-        v = num(t, "consumption"); if (v != null) st.consumptionL100 = v;
-        v = num(t, "range");       if (v != null) st.rangeKm = v;
-        v = num(t, "fuel");        if (v != null) st.fuelLevelPct = v;
+        v = num(t, "speed");       if (v != null) st.ponVelocidad(v);
+        v = num(t, "rpm");         if (v != null) st.ponRegimen(v);
+        v = num(t, "coolant");     if (v != null) st.ponRefrigerante(v);
+        v = num(t, "consumption"); if (v != null) st.ponConsumo(v);
+        v = num(t, "range");       if (v != null) st.ponAutonomia(v);
+        v = num(t, "fuel");        if (v != null) st.ponCombustible(v);
+        v = num(t, "load");        if (v != null) st.ponCarga(v);
+        v = num(t, "battery");     if (v != null) st.ponVoltaje(v);
         Double ext = num(t, "outsideTemp");
-        if (ext != null) st.outsideTempC = Integer.valueOf((int) Math.round(ext.doubleValue()));
+        if (ext != null) st.ponExterior(Integer.valueOf((int) Math.round(ext.doubleValue())));
         Boolean bo;
-        bo = bool(t, "doorOpen");  if (bo != null) st.doorOpen = bo;
-        bo = bool(t, "lightsOn");  if (bo != null) st.lightsOn = bo;
+        bo = bool(t, "doorOpen");  if (bo != null) st.ponPuerta(bo);
+        bo = bool(t, "lightsOn");  if (bo != null) st.ponLuces(bo);
         st.touch();
     }
 

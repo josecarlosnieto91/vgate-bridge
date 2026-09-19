@@ -418,9 +418,25 @@ public class LauncherActivity extends Activity {
         f.addView(botonRedondo(SimboloIcono.REJILLA, new Runnable() {
             @Override public void run() { abrirCajon(); }
         }));
-        f.addView(botonRedondo(SimboloIcono.AJUSTES, new Runnable() {
+        View engranaje = botonRedondo(SimboloIcono.AJUSTES, new Runnable() {
             @Override public void run() { ajustesInicio(); }
-        }));
+        });
+        // Pulsación larga: la pantalla de diagnóstico del coche. Va aquí porque es
+        // donde uno busca cuando algo no cuadra, y así el dashboard no gana un botón
+        // más para algo que no se usa conduciendo.
+        engranaje.setOnLongClickListener(new View.OnLongClickListener() {
+            @Override public boolean onLongClick(View v) {
+                Diario.info("Diagnostico", "abriendo el diagnostico desde el engranaje");
+                try {
+                    startActivity(new Intent(LauncherActivity.this, DiagnosticoActivity.class)
+                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+                } catch (Throwable t) {
+                    Diario.error("Diagnostico", "no se pudo abrir el diagnostico", t);
+                }
+                return true;
+            }
+        });
+        f.addView(engranaje);
         // Los accesos se montan AQUÍ. Estaban escritos y no se llamaban desde ningún
         // sitio: los cinco atajos configurados no llegaron a pintarse nunca y la
         // captura no lo delataba, porque la vista se centra en los instrumentos.

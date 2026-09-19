@@ -45,6 +45,10 @@ public final class LiveState {
     public volatile Integer outsideTempC;
     /** Nivel de combustible (OBD 012F), %. */
     public volatile Double fuelLevelPct;
+    /** Carga del motor (OBD 0104), %. */
+    public volatile Double loadPct;
+    /** Voltaje de batería (OBD 0142), V. */
+    public volatile Double batteryV;
     /** Alguna puerta abierta (CAN 1281/58). */
     public volatile Boolean doorOpen;
     /** Alumbrado encendido (CAN 1281/56, byte 3). */
@@ -52,9 +56,86 @@ public final class LiveState {
     /** Momento de la última actualización, ms desde epoch. */
     public volatile long updatedAt;
 
+    // ── El sello de cada dato, por separado ──────────────────────────────────
+    //
+    // Un solo "updatedAt" no basta: si el CAN sigue dando puertas mientras el OBD se
+    // ha caído, con un sello común parecería que todo está al día. Cada magnitud lleva
+    // el suyo, y así la pantalla puede decir "esto es de ahora" y "esto es de hace
+    // tres minutos" sin mentir en ninguna de las dos.
+    public volatile long speedKmhAt, rpmAt, coolantCAt, loadPctAt, batteryVAt;
+    public volatile long consumptionL100At, rangeKmAt, outsideTempCAt, fuelLevelPctAt;
+    public volatile long doorOpenAt, lightsOnAt;
+
+    /** Origen de cada dato, para poder decirlo en la pantalla de diagnóstico. */
+    public static final String FUENTE_OBD = "OBD";
+    public static final String FUENTE_CAN = "CAN";
+
     /** Marca que algo se ha actualizado (lo llama quien escribe los datos). */
     public void touch() {
         updatedAt = System.currentTimeMillis();
+    }
+
+    // ── Escritura: valor y sello juntos ──────────────────────────────────────
+
+    public void ponVelocidad(Double v)        { speedKmh = v;        speedKmhAt = ahora(v); }
+    public void ponRegimen(Double v)          { rpm = v;             rpmAt = ahora(v); }
+    public void ponRefrigerante(Double v)     { coolantC = v;        coolantCAt = ahora(v); }
+    public void ponCarga(Double v)            { loadPct = v;         loadPctAt = ahora(v); }
+    public void ponVoltaje(Double v)          { batteryV = v;        batteryVAt = ahora(v); }
+    public void ponConsumo(Double v)          { consumptionL100 = v; consumptionL100At = ahora(v); }
+    public void ponAutonomia(Double v)        { rangeKm = v;         rangeKmAt = ahora(v); }
+    public void ponExterior(Integer v)        { outsideTempC = v;    outsideTempCAt = ahora(v); }
+    public void ponCombustible(Double v)      { fuelLevelPct = v;    fuelLevelPctAt = ahora(v); }
+    public void ponPuerta(Boolean v)          { doorOpen = v;        doorOpenAt = ahora(v); }
+    public void ponLuces(Boolean v)           { lightsOn = v;        lightsOnAt = ahora(v); }
+
+    private static long ahora(Double v) {
+        return v == null ? 0L : System.currentTimeMillis();
+    }
+
+    private static long ahora(Integer v) {
+        return v == null ? 0L : System.currentTimeMillis();
+    }
+
+    private static long ahora(Boolean v) {
+        return v == null ? 0L : System.currentTimeMillis();
+    }
+
+    // ── Consulta: ¿esto es un dato de ahora, o ya no vale? ───────────────────
+
+    /** Sin dato: nunca ha llegado. */
+    public static final int SIN_DATO = 0;
+    /** Caducado: llegó, pero hace demasiado. */
+    public static final int CADUCADO = 1;
+    /** Actual: es de ahora mismo. */
+    public static final int ACTUAL = 2;
+
+    /**
+     * Estado de una lectura a partir de su sello.
+     *
+     * Es la regla que sostiene todo lo demás: un valor viejo NO es un valor. Enseñarlo
+     * como si fuera actual es la forma más fácil de mentir en un cuadro de mando.
+     */
+    public int estado(long sello, long caducaMs) {
+        if (sello == 0L) return SIN_DATO;
+        return (System.currentTimeMillis() - sello) <= caducaMs ? ACTUAL : CADUCADO;
+    }
+
+    /** Edad en milisegundos, o -1 si nunca ha llegado. */
+    public long edad(long sello) {
+        if (sello == 0L) return -1L;
+        return System.currentTimeMillis() - sello;
+    }
+
+    /** Descripción legible de una edad, para la pantalla de diagnóstico. */
+    public static String comoEdad(long ms) {
+        if (ms < 0) return "nunca";
+        if (ms < 1000) return "ahora";
+        long s = ms / 1000;
+        if (s < 60) return "hace " + s + " s";
+        long m = s / 60;
+        if (m < 60) return "hace " + m + " min";
+        return "hace " + (m / 60) + " h";
     }
 
     /**
@@ -79,6 +160,8 @@ public final class LiveState {
         campo(sb, sep, "range", rangeKm);
         campo(sb, sep, "outsideTemp", outsideTempC);
         campo(sb, sep, "fuel", fuelLevelPct);
+        campo(sb, sep, "load", loadPct);
+        campo(sb, sep, "battery", batteryV);
         bool(sb, sep, "doorOpen", doorOpen);
         bool(sb, sep, "lightsOn", lightsOn);
         sep.pon(sb);

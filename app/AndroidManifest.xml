@@ -54,6 +54,10 @@
              - singleTask + stateNotNeeded + excludeFromRecents: es una pantalla
                de inicio, no una app que se apila en el historial.
              - landscape: el salpicadero es apaisado. -->
+        <activity android:name=".DiagnosticoActivity"
+            android:label="Diagnostico del coche"
+            android:excludeFromRecents="true"
+            android:launchMode="singleTop" />
         <activity
             android:name=".LauncherActivity"
             android:exported="true"
