@@ -1,0 +1,149 @@
+/* Pantalla de inicio de Polar Star.
+   Reglas que vienen de cómo se usa esto: se mira de reojo, a pleno sol o de noche,
+   en una pantalla de 7" a un metro. Por eso: números enormes, contraste alto, sin
+   adornos y SIN ANIMACIONES (el UIS8581A es un SoC flojo; una transición de más
+   se nota en el refresco del velocímetro).
+
+   Tema: noche/día. En modo "auto" lo decide el alumbrado del coche (CAN 1281/56),
+   que es mejor que la hora: con niebla a mediodía llevas las luces encendidas y
+   quieres el panel oscuro. */
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+html, body {
+  height: 100%;
+  overflow: hidden;                 /* nada de scroll en un salpicadero */
+  font-family: system-ui, "Roboto", sans-serif;
+  -webkit-user-select: none; user-select: none;
+  background: #000;
+  color: #fff;
+}
+
+body {
+  display: flex; flex-direction: column;
+  padding: 2vh 2vw;
+  gap: 2vh;
+  transition: background .3s, color .3s;
+}
+
+/* ── Tema noche (por defecto) ─────────────────────────────────────────────── */
+body.noche { background: #06080c; color: #eef2f6; }
+body.noche .dato, body.noche .testigo { background: #11161d; }
+/* Contraste de las etiquetas: subido tras la revisión visual del 2026-09-19.
+   #7d8b9a sobre #11161d se leía mal a un metro; ahora se separa más. */
+body.noche .etiqueta { color: #9fb0c0; }
+body.noche .dato .valor b { color: #fff; }
+
+/* ── Tema día ─────────────────────────────────────────────────────────────── */
+body.dia { background: #eef1f4; color: #10161d; }
+body.dia .dato, body.dia .testigo { background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.12); }
+body.dia .etiqueta { color: #5b6875; }
+body.dia .dato .valor b { color: #0a0f14; }
+/* En tema claro, las unidades en gris muy claro no se leen (revisión visual).
+   En día van oscuras; el gris claro queda solo para el tema noche. */
+body.dia .dato .valor i, body.dia .unidad { color: #5b6875; }
+body.dia .accesos button { background: #fff; color: #10161d; box-shadow: 0 1px 3px rgba(0,0,0,.15); }
+body.dia .ajustes { background: #fff; color: #10161d; }
+
+.panel {
+  flex: 1;
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
+  grid-template-rows: 1fr auto;
+  grid-template-areas:
+    "velocidad datos"
+    "testigos  datos";
+  gap: 2vh 2vw;
+  min-height: 0;
+}
+
+/* ── Velocidad: el dato principal ─────────────────────────────────────────── */
+.velocidad {
+  grid-area: velocidad;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  min-height: 0;
+}
+.aguja { display: flex; align-items: baseline; gap: 1.2vw; }
+#vel-valor {
+  font-size: 21vh; line-height: .86; font-weight: 700;
+  font-variant-numeric: tabular-nums;   /* los dígitos no bailan al cambiar */
+  letter-spacing: -.02em;
+}
+.unidad { font-size: 4.4vh; color: #9fb0c0; font-weight: 500; }
+.aviso { font-size: 2.2vh; color: #ffab00; min-height: 2.6vh; margin-top: 1vh; }
+
+/* Sin dato: NO se pinta un cero ni un guion enorme (un guion a 21vh se lee como
+   una barra suelta, no como "no hay dato"). Se reduce y se apaga, y el aviso de
+   encima dice qué pasa. Revisión visual del 2026-09-19: el guion a tamaño completo
+   parecía un elemento roto. */
+#vel-valor.sin-dato { color: #46505c; font-size: 9vh; }
+
+/* ── Banda de datos ──────────────────────────────────────────────────────── */
+.datos {
+  grid-area: datos;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.6vh 1.6vw;
+  min-height: 0;
+}
+.dato {
+  display: flex; flex-direction: column; justify-content: center;
+  padding: 1.4vh 1.6vw;
+  border-radius: 1.2vh;
+  min-width: 0;
+}
+.etiqueta {
+  font-size: 1.8vh; text-transform: uppercase; letter-spacing: .08em;
+  margin-bottom: .5vh; font-weight: 600;
+}
+.dato .valor { display: flex; align-items: baseline; gap: .5vw; }
+.dato .valor b { font-size: 5.4vh; font-weight: 600; font-variant-numeric: tabular-nums; }
+.dato .valor i { font-size: 2vh; font-style: normal; color: #9fb0c0; }
+
+/* ── Testigos ────────────────────────────────────────────────────────────── */
+.testigos { grid-area: testigos; display: grid; grid-template-columns: 1fr 1fr; gap: 1.6vw; }
+.testigo {
+  display: flex; align-items: center; justify-content: center; gap: 1vw;
+  border-radius: 1.2vh; padding: 1.2vh 1vw;
+  color: #5b6875;                       /* apagado = en reposo */
+}
+.testigo svg { width: 3.4vh; height: 3.4vh; fill: none; stroke: currentColor; stroke-width: 1.7; }
+.testigo span { font-size: 2vh; }
+/* Encendido (puerta abierta / luces puestas): se ve de un vistazo. */
+.testigo.activo { color: #ffab00; background: rgba(255,171,0,.14); font-weight: 600; }
+.testigo.desconocido { opacity: .45; }
+
+/* ── Accesos a apps ──────────────────────────────────────────────────────── */
+.accesos {
+  display: grid;
+  grid-auto-flow: column;
+  /* minmax(0,1fr): sin el 0, el contenido impone su ancho mínimo y el último botón
+     se sale de la pantalla (revisión visual del 2026-09-19: "Android Auto" salía
+     cortado). Con esto los cinco se reparten el ancho y encogen si hace falta. */
+  grid-auto-columns: minmax(0, 1fr);
+  gap: 1.4vw;
+  padding-right: 8.5vh;                 /* hueco para el botón de ajustes */
+}
+.accesos button {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: .6vh;
+  min-width: 0;
+  padding: 1.8vh .6vw;
+  border: 0; border-radius: 1.6vh;
+  background: #11161d; color: #eef2f6;
+  font-family: inherit; font-size: 1.8vh; font-weight: 600; line-height: 1.15;
+  text-align: center; white-space: normal; overflow-wrap: anywhere;
+  cursor: pointer;
+}
+.accesos button:active { background: #1b2430; }
+.accesos svg { width: 4.4vh; height: 4.4vh; fill: none; stroke: currentColor; stroke-width: 1.6; flex: none; }
+.accesos .no-disponible { opacity: .35; }
+
+/* ── Botón de ajustes (salida de emergencia) ─────────────────────────────── */
+.ajustes {
+  position: fixed; right: 1.2vw; bottom: 2vh;
+  width: 6vh; height: 6vh; border-radius: 50%;
+  border: 0; background: #11161d; color: #7d8b9a;
+  font-size: 3vh; cursor: pointer;
+}

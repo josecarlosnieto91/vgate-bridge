@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Polar Star</title>
+<link rel="stylesheet" href="launcher.css">
+</head>
+<body class="noche">
+
+  <!-- ── PRIMERA FILA: lo que miras de reojo mientras conduces ──────────────
+       La velocidad manda: es el único dato que se lee a un metro de distancia.
+       Si el dato no está, se muestra "—" y NUNCA 0: un velocímetro mintiendo
+       un cero es peor que no tener velocímetro. -->
+  <main class="panel">
+
+    <section class="velocidad">
+      <div class="aguja">
+        <span id="vel-valor">—</span>
+        <span class="unidad">km/h</span>
+      </div>
+      <div class="aviso" id="vel-aviso"></div>
+    </section>
+
+    <section class="datos">
+      <div class="dato">
+        <span class="etiqueta">Consumo</span>
+        <span class="valor"><b id="d-consumo">—</b><i>l/100 km</i></span>
+      </div>
+      <div class="dato">
+        <span class="etiqueta">Autonomía</span>
+        <span class="valor"><b id="d-rango">—</b><i>km</i></span>
+      </div>
+      <div class="dato">
+        <span class="etiqueta">Exterior</span>
+        <span class="valor"><b id="d-ext">—</b><i>°C</i></span>
+      </div>
+      <div class="dato">
+        <span class="etiqueta">Motor</span>
+        <span class="valor"><b id="d-motor">—</b><i>°C</i></span>
+      </div>
+      <div class="dato">
+        <span class="etiqueta">Régimen</span>
+        <span class="valor"><b id="d-rpm">—</b><i>rpm</i></span>
+      </div>
+      <div class="dato">
+        <span class="etiqueta">Combustible</span>
+        <span class="valor"><b id="d-fuel">—</b><i>%</i></span>
+      </div>
+    </section>
+
+    <!-- Testigos: puertas y alumbrado. Son DEL COCHE (CAN), no estimaciones. -->
+    <section class="testigos">
+      <div class="testigo" id="t-puertas">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h9l5 5v11H4z"/><path d="M13 4v5h5"/><circle cx="9" cy="14" r="1"/></svg>
+        <span>Puertas</span>
+      </div>
+      <div class="testigo" id="t-luces">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12h6l4-5v10l-4-5H3z"/><path d="M16 8l4-3M16 12h5M16 16l4 3"/></svg>
+        <span>Alumbrado</span>
+      </div>
+    </section>
+  </main>
+
+  <!-- ── SEGUNDA FILA: los accesos. Paquetes reales comprobados en la tablet;
+       editables desde launcher.json sin tocar el APK. -->
+  <footer class="accesos" id="accesos"></footer>
+
+  <!-- Salida de emergencia: si algo va mal, hay que poder volver al launcher de
+       la ROM. Discreto pero siempre accesible. -->
+  <button class="ajustes" id="btn-ajustes" title="Ajustes del sistema">⚙</button>
+
+  <script src="launcher.js"></script>
+</body>
+</html>

@@ -30,8 +30,13 @@ $BUILD_TOOLS/d8 --release --output build/ \
     build/classes/com/cassiopeia/vgatebridge/*.class
 
 echo "=== Packaging APK ==="
+# -A assets: la pantalla del launcher (v5.1.0) vive en app/assets/launcher y tiene
+# que viajar DENTRO del APK. Sin esto, el WebView buscaría un fichero que no existe
+# y la pantalla de inicio saldría en negro.
+[ -d assets/launcher ] || { echo "FALLO: falta assets/launcher (la pantalla del launcher)"; exit 1; }
 "$AAPT" package -f \
     -M AndroidManifest.xml \
+    -A assets \
     -I $PLATFORM/android.jar \
     -F build/vgate-bridge-unaligned.apk
 
