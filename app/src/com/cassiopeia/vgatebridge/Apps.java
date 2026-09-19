@@ -94,12 +94,20 @@ final class Apps {
         return salida;
     }
 
-    /** ¿Está instalada esa aplicación? Se comprueba antes de pintar un acceso. */
+    /**
+     * ¿Está instalada esa aplicación? Se comprueba antes de pintar un acceso.
+     *
+     * OJO: getLaunchIntentForPackage devuelve **null** cuando la aplicación no está
+     * (no lanza excepción). La primera versión de esto se limitaba a llamarlo dentro
+     * de un try/catch, así que respondía "sí existe" SIEMPRE y pintaba accesos de
+     * aplicaciones que no están instaladas: en el emulador aparecieron cinco atajos
+     * con el nombre del paquete como etiqueta. Lo delató el registro del diario
+     * ("pintados 5 de 5" en un aparato sin Waze ni Spotify).
+     */
     static boolean existe(Context ctx, String paquete) {
         if (paquete == null || paquete.length() == 0) return false;
         try {
-            ctx.getPackageManager().getLaunchIntentForPackage(paquete);
-            return true;
+            return ctx.getPackageManager().getLaunchIntentForPackage(paquete) != null;
         } catch (Throwable t) {
             return false;
         }

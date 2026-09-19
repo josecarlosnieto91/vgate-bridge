@@ -96,7 +96,12 @@ grep -q "loadIcon" "$SRC/Apps.java" && ok "se usan los iconos REALES de las apli
 grep -q "getLaunchIntentForPackage" "$SRC/Apps.java" && ok "se valida que la app exista antes de abrirla" \
     || bad "abrir sin validar"
 grep -q "getApplicationIcon" "$SRC/LauncherActivity.java" && ok "los accesos directos llevan icono real" \
-    || bad "accesos sin icono"
+    || bad "sin icono"
+# getLaunchIntentForPackage devuelve null si la app no está, NO lanza excepción. Un
+# try/catch sin comparar con null responde "existe" siempre y pinta accesos fantasma.
+grep -A6 "static boolean existe" "$SRC/Apps.java" | grep -q "!= null" \
+    && ok "la existencia de una app se comprueba contra null (no solo con try/catch)" \
+    || bad "Apps.existe no compara con null: daria por instaladas apps que no estan"
 grep -q "onBackPressed" "$SRC/LauncherActivity.java" && ok "atrás no deja la tablet sin interfaz" \
     || bad "atrás sin control"
 grep -q "ajustesInicio" "$SRC/LauncherActivity.java" && ok "salida de emergencia al launcher de la ROM" \
