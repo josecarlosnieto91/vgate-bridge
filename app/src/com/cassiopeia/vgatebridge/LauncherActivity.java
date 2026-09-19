@@ -49,6 +49,17 @@ public class LauncherActivity extends Activity {
         web.setWebViewClient(new WebViewClient());   // los enlaces no salen del WebView
         setContentView(web);
 
+        // Única puerta del HTML hacia el sistema: estado del coche, lista de apps,
+        // tema, abrir una app y abrir los ajustes de inicio. Todo lo que entra por
+        // ahí se valida dentro de WebBridge.
+        web.addJavascriptInterface(new WebBridge(this, LiveState.INSTANCIA), "Android");
+
+        // Inspeccionable desde adb (chrome://inspect / CDP). Está para poder mirar
+        // el DOM real del WebView durante el desarrollo, que es donde se ven fallos
+        // que una captura no distingue. No abre nada hacia fuera: solo atiende a un
+        // depurador que ya tenga acceso al dispositivo por adb.
+        WebView.setWebContentsDebuggingEnabled(true);
+
         pantallaCompleta();
         web.loadUrl("file:///android_asset/launcher/index.html");
     }

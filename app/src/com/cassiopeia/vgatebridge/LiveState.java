@@ -20,6 +20,17 @@ import java.util.Locale;
  */
 public final class LiveState {
 
+    /**
+     * Estado compartido del proceso.
+     *
+     * El sniffer CAN, el sondeo OBD y la pantalla viven en la MISMA app (y por
+     * tanto en el mismo proceso), así que este es el punto donde se encuentran:
+     * los servicios escriben aquí y el launcher lee al pintar. Es un singleton
+     * porque duplicarlo significaría que la pantalla mira un sitio y el coche
+     * escribe en otro — el fallo más tonto posible y el más difícil de ver.
+     */
+    public static final LiveState INSTANCIA = new LiveState();
+
     /** Velocidad del ECU (OBD 010D), km/h. */
     public volatile Double speedKmh;
     /** Régimen del motor (OBD 010C), rpm. */
