@@ -45,7 +45,17 @@ public class CanSnifferService extends Service {
     private static final String TAG = "CanSniffer";
     private static final String CHANNEL_ID = "vgate_can";
     private static final int NOTIF_ID = 22001;
-    private static final short[] CHANNELS = {266, 1281, 1288, 267, 513, 524, 523, -24804};
+    // v5.0.8: se amplía la suscripción con los códigos que documenta la comunidad
+    // para este framework TW y que NO escuchábamos. El interesante es el 520
+    // (velocidad real del coche, frente a la del GPS). Solo se SUSCRIBE: no se
+    // interpreta nada todavía — el censo dirá qué entrega cada uno en ESTA unidad
+    // (la fuente es de otra plataforma y aquí hay que medirlo). Si alguno resulta
+    // ruidoso o no aporta, se quita.
+    private static final short[] CHANNELS = {
+            266, 1281, 1288, 267, 513, 524, 523, -24804,   // los de siempre
+            520, 769, 515, 516, 2560, 2561, 2562, 2563};
+    // ⚠️ 40732 (marcha atrás) no cabe en un short: ya estaba en la lista como
+    // -24804, que es el MISMO valor en complemento a dos. No hay que añadirlo.
 
     private static final String CSV_NAME = "can_readings.csv";
     // ── Descubrimiento (temporal, 2026-09-17) ────────────────────────────
