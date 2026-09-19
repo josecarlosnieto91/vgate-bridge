@@ -56,7 +56,12 @@ public class CanSnifferService extends Service {
     // quitar cuando el mapa esté hecho.
     private static final String CENSUS_NAME = "can_census.csv";
     private static final String TEMP_NAME = "can_temp.csv";
+    private static final String CHANGES_NAME = "can_changes.csv";
+    // Estos cambian cada segundo: fuera de la traza de cambios (la inundarían).
+    private static final java.util.HashSet<String> CLAVES_RUIDOSAS =
+            new java.util.HashSet<>(java.util.Arrays.asList("1281/51", "1281/125"));
     private static final long CENSUS_DUMP_MS = 300_000L;   // volcado cada 5 min
+    private static final int CHANGES_MAX = 2000;           // tope de la traza de cambios
     private final java.util.HashMap<String, Censo> censo = new java.util.HashMap<>();
     private long lastCensusDump;
     private String ultimaTempHex = "";
@@ -184,7 +189,8 @@ public class CanSnifferService extends Service {
             }
             c.n++;
             c.largo = d.length;
-            if (c.ultimo == null || !java.util.Arrays.equals(c.ultimo, d)) {
+            boolean cambio = c.ultimo == null || !java.util.Arrays.equals(c.ultimo, d);
+            if (cambio) {
                 c.ultimo = d.clone();
                 StringBuilder sb = new StringBuilder();
                 for (byte b : d) sb.append(String.format(Locale.US, "%02X", b));
@@ -199,9 +205,54 @@ public class CanSnifferService extends Service {
             if (lastCensusDump == 0 || now - lastCensusDump >= CENSUS_DUMP_MS) {
                 volcarCenso(now);
             }
+            // Traza de cambios (2026-09-19): el censo guarda solo el ÚLTIMO valor
+            // de cada dato y se reescribe cada 5 min, así que un evento corto
+            // (abrir una puerta, encender las luces) se pierde. Esto deja una
+            // línea por cambio en los datos que NO son de alta frecuencia (51 y
+            // 125 cambian cada segundo: se excluyen para no inundar el fichero).
+            // Es lo que permite identificar un ID provocando el evento a mano.
+            if (cambio && !CLAVES_RUIDOSAS.contains(clave)) {
+                anotaCambio(clave, c.hex, now);
+            }
         } catch (Exception e) {
             // Silencio a propósito: el censo es auxiliar, la recogida es lo crítico.
         }
+    }
+
+    /**
+     * Una línea por cambio en un dato poco frecuente (ver CHANGES_NAME).
+     * Es la traza que permite identificar un ID provocando el evento a mano:
+     * abrir una puerta, encender las luces… y ver qué clave se movió.
+     * Se acota a CHANGES_MAX líneas para que no crezca sin fin.
+     */
+    private void anotaCambio(String clave, String hex, long now) {
+        try {
+            File dir = getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS);
+            if (dir == null) return;
+            File f = new File(dir, CHANGES_NAME);
+            boolean cabecera = !f.exists() || f.length() == 0;
+            if (f.exists() && contarLineas(f) > CHANGES_MAX) {
+                new PrintWriter(new FileWriter(f, false)).close();   // se recorta
+                cabecera = true;
+            }
+            PrintWriter out = new PrintWriter(new FileWriter(f, true), true);
+            if (cabecera) out.println("ts,what,arg1,hex");
+            String ts = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US).format(new Date(now));
+            out.printf(Locale.US, "%s,%s,%s%n", ts, clave.replace('/', ','), hex);
+            out.close();
+        } catch (Exception e) {
+            Log.e(TAG, "no se pudo anotar el cambio", e);
+        }
+    }
+
+    private static int contarLineas(File f) {
+        int n = 0;
+        try (java.io.BufferedReader r = new java.io.BufferedReader(new java.io.FileReader(f))) {
+            while (r.readLine() != null) n++;
+        } catch (Exception e) {
+            return 0;
+        }
+        return n;
     }
 
     /** Foto del censo (se reescribe entera: son pocas claves y así no crece). */
