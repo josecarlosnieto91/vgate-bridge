@@ -112,12 +112,13 @@ hay ninguna clase que abra una conexión: la interfaz es local de principio a fi
 
 **Sin hacer (lo que continúa):**
 
-- **Tareas 3 y 4 del plan: los datos EN VIVO.** Hoy las agujas se mueven con datos
-  inyectados a mano. Falta (a) un sondeo OBD interno que comparta el enlace ELM con
-  el recolector mediante un mutex —⚠️ es la parte más delicada, ver punto 6— y
-  (b) enganchar el CAN del sniffer a `LiveState`.
-- **Despliegue en la tablet**: la v5.3.0 está construida y verificada, sin instalar.
-- Decisiones de diseño pendientes: pantalla de viaje e indicador de eficiencia.
+- **Tareas 3 y 4 del plan: los datos EN VIVO.** Hoy la pantalla lee `LiveState`, pero
+  nadie escribe ahí todavía desde el coche. **Hay una decisión tomada y una trampa ya
+  explicada: leer el apartado «Cómo se conectarán los datos en vivo»** antes de tocar
+  nada. Falta (a) esa conexión y (b) enganchar el CAN del sniffer a `LiveState`.
+- **Despliegue en la tablet**: la v5.5.0 está construida y verificada, sin instalar.
+- Pantallas de sistema (batería, Bluetooth, WiFi, almacenamiento) y configuración visual
+  de `launcher.json`: búsqueda en el cajón, unidades y formato horario.
 - **El mapa embebido**: descartado por ahora. Exigiría abrir la red o una caché de
   teselas propia (`osmdroid`), y las de OpenStreetMap no se pueden usar desde una
   app sin contratar un proveedor. Hoy es un botón que abre Maps o Waze.
@@ -148,6 +149,43 @@ hay ninguna clase que abra una conexión: la interfaz es local de principio a fi
   estricto, contar backticks de comentarios como sintaxis moderna, una versión
   fijada a mano que caducó, y un `grep` de líneas vecinas. Cuando una verificación
   falla, comprobar **primero** que no miente.
+
+## 5 bis. Cómo se conectarán los datos en vivo (decisión tomada)
+
+**DECISIÓN DEL RESPONSABLE DEL PROYECTO: se sigue usando el Vgate Bridge tal y como
+está, porque las alertas de Telegram y OBD Telemetry tienen que seguir funcionando.**
+Eso manda sobre cualquier otra consideración.
+
+**Consecuencia directa, y conviene tenerla clara:** el launcher **NO** abre su propia
+conexión al ELM327. Y no por prudencia mal entendida, sino porque no puede:
+
+- El bridge expone ELM327 en `127.0.0.1:22000` y atiende clientes **de uno en uno**,
+  reutilizando el mismo enlace Bluetooth.
+- El recolector de Termux ya es cliente de ese puerto. Si el launcher se conectara
+  también, o se queda esperando turno indefinidamente (con el riesgo de bloquear la
+  reconexión del recolector), o le roba el turno y **rompe la telemetría y las alertas**.
+- Y una conexión Bluetooth paralela al adaptador no es una opción: el Vgate admite una.
+
+**Las dos vías que sí respetan la decisión**, para elegir una el día que se pruebe con
+el coche:
+
+1. **Que el bridge sirva el estado a la app (recomendada).** Como el launcher vive en el
+   MISMO proceso que el bridge, no hace falta socket: se le pide el dato directamente a
+   `BridgeService`, y es él —que es el dueño del enlace Bluetooth— quien serializa el
+   acceso. El recolector por TCP sigue funcionando igual porque el bridge es el mismo.
+   ⚠️ **No es una línea de código trivial**: el relay TCP actual reenvía bytes sin
+   entender de tramas, así que hay que darle estructura de petición/respuesta antes de
+   dejar que dos caminos compartan el enlace. Hacerlo mal atasca el ELM y se lleva por
+   delante la telemetría. Requiere copia previa del bridge, cambio documentado y
+   verificación con el coche en marcha.
+2. **Que el recolector publique lo que ya lee.** El recolector ya tiene los datos; si
+   publicara el último estado en un fichero pequeño en la tablet, el launcher lo leería
+   sin tocar el ELM en absoluto: contención cero. Se toca un script nuestro (versionado
+   y verificable), no el bridge. A cambio, la frescura depende de la cadencia del
+   recolector, que es más lenta que un cuadro de instrumentos.
+
+**Lo que NO se hace:** conectar el launcher por su cuenta al puerto 22000, abrir un
+segundo enlace Bluetooth, o cambiar el protocolo CAN o el perfil C-QUATRE.
 
 ## 6. Cómo se trabaja en esto
 
