@@ -74,7 +74,29 @@
 
   <footer class="accesos" id="accesos"></footer>
 
-  <button class="ajustes" id="btn-ajustes" title="Ajustes del sistema">
+  <!-- CAJÓN DE APLICACIONES: todas las apps instaladas, en mosaico. Es el acceso
+       que faltaba: los cinco atajos de abajo son los frecuentes, pero un launcher
+       sin forma de llegar al resto deja al conductor encerrado. Oculto por
+       defecto; lo abre el botón de la rejilla. -->
+  <section class="cajon oculto" id="cajon">
+    <div class="cajon-cabecera">
+      <b>Aplicaciones</b>
+      <button class="cerrar" id="cajon-cerrar" aria-label="Cerrar">
+        <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </div>
+    <div class="cajon-rejilla" id="cajon-rejilla"></div>
+    <p class="cajon-vacio" id="cajon-vacio">Sin aplicaciones que mostrar</p>
+  </section>
+
+  <button class="boton-redondo" id="btn-cajon" title="Todas las aplicaciones">
+    <svg viewBox="0 0 24 24">
+      <rect x="3" y="3" width="7" height="7" rx="1.6"/><rect x="14" y="3" width="7" height="7" rx="1.6"/>
+      <rect x="3" y="14" width="7" height="7" rx="1.6"/><rect x="14" y="14" width="7" height="7" rx="1.6"/>
+    </svg>
+  </button>
+
+  <button class="boton-redondo ajustes" id="btn-ajustes" title="Ajustes del sistema">
     <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M19 5l-2 2M7 17l-2 2"/></svg>
   </button>
 

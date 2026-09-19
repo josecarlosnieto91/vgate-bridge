@@ -332,6 +332,63 @@
     });
   }
 
+  // ── Cajón de aplicaciones ────────────────────────────────────────────────
+  /* La lista se pide al puente la primera vez que se abre y se guarda: cambiar de
+     app instalada es raro y consultarlo en cada apertura sería trabajo inútil. */
+  var cajonCargado = false;
+  function cargarCajon() {
+    var rejilla = $('cajon-rejilla'), cajon = $('cajon'), vacio = $('cajon-vacio');
+    if (!rejilla || !cajon) return;
+    if (cajonCargado) return;
+    if (!hayPuente || typeof window.Android.appsTodas !== 'function') {
+      // En el navegador no hay apps que listar: se dice, no se finge.
+      cajon.classList.add('sin-puente');
+      if (vacio) vacio.textContent = 'Sin puente: en la tablet aquí saldrían las aplicaciones instaladas';
+      cajonCargado = true;
+      return;
+    }
+    var lista = [];
+    try {
+      lista = JSON.parse(window.Android.appsTodas());
+    } catch (e) {
+      lista = [];
+    }
+    rejilla.innerHTML = '';
+    for (var i = 0; i < lista.length; i++) {
+      var app = lista[i];
+      if (!app || !app.paquete) continue;
+      var b = document.createElement('button');
+      // innerHTML SOLO con la estructura vacía; el nombre y la inicial entran por
+      // textContent, así que un nombre con comillas o etiquetas no puede inyectar
+      // nada en la pantalla.
+      b.innerHTML = '<span class="inicial"></span><span class="etiqueta"></span>';
+      var inicial = b.querySelector('.inicial');
+      var etiqueta = b.querySelector('.etiqueta');
+      inicial.textContent = (app.nombre || '?').charAt(0).toUpperCase();
+      etiqueta.textContent = app.nombre || app.paquete;
+      (function (paquete) {
+        b.addEventListener('click', function () {
+          if (typeof window.Android.abrirApp === 'function') window.Android.abrirApp(paquete);
+          abrirCajon(false);
+        });
+      })(app.paquete);
+      rejilla.appendChild(b);
+    }
+    if (vacio) vacio.textContent = lista.length ? '' : 'Sin aplicaciones que mostrar';
+    cajonCargado = true;
+  }
+  function abrirCajon(abrir) {
+    var cajon = $('cajon');
+    if (!cajon) return;
+    if (abrir) cargarCajon();
+    cajon.classList.toggle('oculto', !abrir);
+  }
+
+  var btnCajon = $('btn-cajon');
+  if (btnCajon) btnCajon.addEventListener('click', function () { abrirCajon(true); });
+  var btnCerrar = $('cajon-cerrar');
+  if (btnCerrar) btnCerrar.addEventListener('click', function () { abrirCajon(false); });
+
   var btnAjustes = $('btn-ajustes');
   if (btnAjustes) {
     btnAjustes.addEventListener('click', function () {

@@ -55,6 +55,24 @@ grep -q "plegada" "$CSS" && grep -q "plegada" "$JS" && ok "sin reproducción la 
 grep -q "SecurityException" "$SRC/WebBridge.java" && ok "permiso ausente tratado (no revienta)" || bad "sin tratar"
 grep -q "getLaunchIntentForPackage" "$SRC/WebBridge.java" && ok "abrirApp valida que la app exista" || bad "abrirApp sin validar"
 grep -q "ajustesInicio" "$SRC/WebBridge.java" && ok "salida de emergencia al launcher de la ROM" || bad "sin salida de emergencia"
+# Cajón de aplicaciones: el acceso al resto de apps instaladas. Sin esto, el
+# launcher solo ofrece los cinco atajos y deja al conductor encerrado.
+grep -q "appsTodas" "$SRC/WebBridge.java" && ok "el puente lista todas las apps instaladas" || bad "sin lista de apps"
+grep -q "appsTodas" "$JS" && ok "el cajón de aplicaciones está cableado en la pantalla" || bad "cajón sin cablear"
+grep -q "btn-cajon" "$HR" && ok "hay botón visible para abrir el cajón" || bad "sin botón de apps"
+grep -q "cajon-rejilla" "$CSS" && ok "el mosaico del cajón tiene estilo" || bad "cajón sin estilo"
+# El JSON del cajón se construye a mano en Java: la coma debe ir DESPUÉS de
+# descartar el propio launcher, o queda una coma suelta y no se puede parsear.
+python3 - "$SRC/WebBridge.java" <<'PY'
+import re, sys
+src = open(sys.argv[1]).read()
+bloque = src[src.find("appsTodas"):]
+coma = bloque.find("if (!primero) sb.append(',');")
+salto = bloque.find("continue;")
+sys.exit(0 if (coma != -1 and salto != -1 and salto < coma) else 1)
+PY
+[ $? = 0 ] && ok "el JSON del cajón escapa bien (coma después del descarte)" \
+    || bad "orden de coma/descarte en appsTodas: dejaría una coma suelta"
 
 echo "── Compatibilidad con el WebView de Android 10 (Chromium 74) ──"
 # `gap` en FLEX no existe hasta Chromium 84; en GRID sí (desde el 57). Se analiza

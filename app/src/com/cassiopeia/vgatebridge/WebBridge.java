@@ -122,6 +122,51 @@ public class WebBridge {
     }
 
     /**
+     * TODAS las apps que se pueden abrir, en JSON: [{"nombre":"Maps","paquete":"..."}].
+     *
+     * Es lo que llena el cajón de aplicaciones. Se ordena por nombre y se quitan
+     * duplicados (una misma app puede declarar varias actividades de inicio: sin
+     * deduplicar, el cajón saldría con la misma app repetida).
+     *
+     * Los nombres vienen del sistema, no de un fichero nuestro, así que se
+     * escapan al construir el JSON: una comilla en el nombre de una app rompería
+     * el parseo en la pantalla.
+     */
+    @android.webkit.JavascriptInterface
+    public String appsTodas() {
+        try {
+            PackageManager pm = actividad.getPackageManager();
+            Intent i = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER);
+            List<ResolveInfo> lista = pm.queryIntentActivities(i, 0);
+            if (lista == null) return "[]";
+            java.util.TreeMap<String, String> porPaquete = new java.util.TreeMap<String, String>();
+            for (ResolveInfo r : lista) {
+                if (r == null || r.activityInfo == null) continue;
+                String paquete = r.activityInfo.packageName;
+                CharSequence etiqueta = r.loadLabel(pm);
+                String nombre = etiqueta == null ? paquete : etiqueta.toString();
+                // El que ya esté se queda: son la misma app con dos actividades.
+                if (!porPaquete.containsKey(nombre)) porPaquete.put(nombre, paquete);
+            }
+            StringBuilder sb = new StringBuilder("[");
+            boolean primero = true;
+            for (java.util.Map.Entry<String, String> e : porPaquete.entrySet()) {
+                // El propio launcher no debe aparecer en su propio cajón. La
+                // comprobación va ANTES de la coma: si no, al saltarse una entrada
+                // quedaría una coma suelta y el JSON no se podría leer.
+                if (actividad.getPackageName().equals(e.getValue())) continue;
+                if (!primero) sb.append(',');
+                primero = false;
+                sb.append("{\"nombre\":").append(json(e.getKey()))
+                  .append(",\"paquete\":").append(json(e.getValue())).append('}');
+            }
+            return sb.append(']').toString();
+        } catch (Throwable t) {
+            return "[]";
+        }
+    }
+
+    /**
      * Qué está sonando ahora mismo, en JSON: {titulo, artista, sonando}.
      *
      * Si el permiso de acceso a notificaciones no está concedido, Android lanza
