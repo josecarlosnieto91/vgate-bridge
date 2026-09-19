@@ -21,7 +21,13 @@ puede hacer en esta unidad:
 
 Vive en el repositorio `~/repos/vgate-bridge`, dentro de la misma app
 (`com.cassiopeia.vgatebridge`) que ya hacía de puente OBD. Es un APK pequeño: unos
-46 KB.
+57 KB.
+
+**La interfaz es NATIVA** (vistas de Android y vistas propias dibujadas con `Canvas`)
+desde la v5.4.0. Hasta la v5.3.x fue una página HTML dentro de un WebView. Se migró
+por decisión del responsable del proyecto, y porque las vistas nativas permiten usar
+los iconos **reales** de las aplicaciones y arrancar antes, que es lo que se espera de
+un launcher de verdad.
 
 ## 2. El hardware y sus límites (no son negociables)
 
@@ -29,27 +35,34 @@ Vive en el repositorio `~/repos/vgate-bridge`, dentro de la misma app
 |---|---|
 | Tablet | Topway TS18, SoC Unisoc UIS8581A (8×Cortex-A55, gama baja), 1024×600 apaisada |
 | Android | 10 (API 29), **sin root** (no hay ADB inalámbrico; solo USB) |
-| WebView del sistema | **Chromium 74** |
 | Alimentación | Del coche: la tablet se apaga con el contacto. Muchas averías hay que probarlas con el motor en marcha |
 | Red | **El WiFi cae con frecuencia** (defecto conocido de estas ROM, no es nuestro software) |
-| Acceso | `ssh polar-star` (Tailscale). El usuario de Telegram que dirige esto es JC |
+| Acceso | `ssh polar-star` (Tailscale) |
+| Compilación | **A mano**: `build.sh` con `javac` + `d8` + `apksigner`. **No hay Gradle** |
 
-**Chromium 74 implica:** nada de `gap` en contenedores flex (llegó en el 84), nada
-de `aspect-ratio` (88), nada de flechas de función ni plantillas de texto. Los `gap`
-de grid sí funcionan (desde el 57). Para crear SVG hay que usar `createElementNS`.
+Por no haber Gradle, tres reglas que hay que respetar o el build falla:
+
+- **Solo se compilan los ficheros PLANOS en `src/com/cassiopeia/vgatebridge/`.** El
+  `build.sh` usa `$SRC/*.java`, que no es recursivo: una clase en una subcarpeta no se
+  compila, y el fallo aparece como «no encuentro la clase» desde otra.
+- **No hay AndroidX ni bibliotecas de terceros.** Solo `android.*` del sistema: un
+  `import androidx...` no compila. Eso incluye la interfaz: nada de RecyclerView ni de
+  Compose; la rejilla de aplicaciones usa el `GridView` del sistema.
+- **Nivel de lenguaje conservador**: sin funciones flecha ni `stream`.
 
 ## 3. Cómo está construido
 
 ```
 LauncherActivity  (declarada como HOME en AndroidManifest.xml)
-   └── WebView, sin red, cargando un fichero LOCAL del APK:
-        assets/launcher/index.html + launcher.css + launcher.js
-             ↕  puente JavaScript (nombre "Android" en el WebView)
-        WebBridge.java  → estado del coche, lista de apps, música, tema, abrir apps
-             ↕
-   LiveState.java  (estado del proceso: lo escriben los servicios, lo lee la pantalla)
-             ↑                                    ↑
-   CanSnifferService (CAN por TWUtil)      MediaListener + MediaSession (música)
+   ├── InstrumentoView   aro, escala CON NÚMEROS, zona roja, aguja y valor
+   ├── BarraView         nivel de combustible y autonomía
+   ├── TestigoView       avisos, que solo existen mientras están activos
+   ├── MusicaView        carátula, título, artista, álbum y controles
+   └── CajonView         el cajón con todas las aplicaciones instaladas
+        ↑ leen
+   LiveState  (el estado del coche: lo escriben los servicios, lo lee la pantalla)
+        ↑ escriben
+   CanSnifferService (CAN por TWUtil)   ·   MediaListener + MediaSession (música)
 ```
 
 **De dónde sale cada dato:**
@@ -65,38 +78,37 @@ LauncherActivity  (declarada como HOME en AndroidManifest.xml)
 - **Música**: `MediaSessionManager`, con `MediaListener` como llave (ver punto 5).
 - **Reloj**: local. Sin red.
 
-**Por qué un WebView y no vistas nativas** — medido, no supuesto: el puente
-Java→JS tarda 0,52 ms por llamada y pintar la aguja 0,22 ms, o sea margen de sobra
-para una aguja a 20 Hz (unos 4 ms de CPU por segundo). El cuello de botella real es
-**el bus del coche**: cada consulta al ELM327 tarda decenas de milisegundos, así que
-la velocidad no puede llegar más rápido porque llegue antes la pantalla. Donde el
-WebView sí cuesta es en el **arranque en frío**: 414 ms medidos en emulador
-(hardware de escritorio), probablemente 1-2 s en la tablet. Decisión pendiente:
-reescribir en nativo **solo los instrumentos** cuando el diseño se congele.
+**Sobre el debate WebView o nativo** (medido en su momento, no opinado): el puente
+Java→JS tardaba 0,52 ms por llamada y pintar la aguja 0,22 ms, margen de sobra para
+20 Hz; el cuello de botella real era **el bus del coche**, no la pantalla. Donde el
+WebView sí costaba era en el arranque en frío y en no poder usar iconos reales. La
+migración a nativo fue decisión del responsable del proyecto, con esos números delante.
 
-**Por qué la pantalla no tiene red** (`setBlockNetworkLoads(true)`): porque el WiFi
-de esta tablet falla a menudo y una pantalla que dependa de Internet se rompería
-justo cuando falla la red. Las apps que lanza (Maps, Waze, Spotify) sí tienen red;
-la restricción es solo sobre nuestra pantalla.
+**Por qué la pantalla no usa Internet**: el WiFi de esta tablet falla a menudo y una
+pantalla que dependiera de la red se rompería justo cuando falla. Las apps que lanza
+(Maps, Waze, Spotify) sí tienen red; la restricción es solo sobre nuestra pantalla. No
+hay ninguna clase que abra una conexión: la interfaz es local de principio a fin.
 
 ## 4. Qué está hecho y qué no
 
 **Hecho y verificado:**
 
-- Cuadro con cuatro instrumentos dibujados desde la escala de cada magnitud (arcos
-  SVG generados en JavaScript, con zona roja según los umbrales reales del coche):
-  régimen, velocidad (el principal), combustible y temperatura del motor.
-- Barra superior con reloj local y música (título, artista y controles).
-- Tira de datos en texto: consumo, autonomía, temperatura exterior.
-- Testigos de puertas y alumbrado.
-- **Cajón de aplicaciones**: botón de rejilla que lista todas las apps instaladas,
-  en mosaico, con la inicial como ficha (no se cargan iconos de terceros).
-- Fila de accesos directos configurable, y salida de emergencia a los ajustes de
-  inicio de Android para poder volver al launcher de la ROM.
+- Cuadro con instrumentos **dibujados a mano** (aro, escala **con números**, zona roja
+  según los umbrales reales del coche, aguja que se mueve interpolada, no a saltos):
+  velocidad como principal, con régimen y refrigerante alrededor.
+- Combustible y autonomía en barra: el combustible baja en días, no merece aguja.
+- Tira con consumo y temperatura exterior. Reloj y fecha en castellano.
+- **Avisos solo cuando ocurren**: puertas, luces y los umbrales del coche
+  (refrigerante ≥95, combustible ≤15 %, velocidad ≥120).
+- Reproductor integrado leyendo de MediaSession: carátula, título, artista, álbum y
+  controles grandes. Distingue «sin permiso» de «sin reproducción».
+- **Cajón de aplicaciones** con los iconos REALES de cada app instalada, más favoritos.
+- Accesos directos configurables por fichero (`launcher.json`), sin recompilar.
 - Tema día/noche **automático por el alumbrado del coche**, no por la hora.
-- Configuración por fichero (`launcher.json`): apps y tema, sin recompilar.
+- Salida de emergencia a los ajustes de inicio de Android, para poder volver al
+  launcher de la ROM. Y la pantalla no se apaga conduciendo.
 - Entorno de pruebas: emulador Android 10 reproducible y prueba de correspondencia
-  que lee el DOM real del WebView.
+  contra lo que la pantalla dibuja.
 
 **Sin hacer (lo que continúa):**
 
@@ -105,9 +117,7 @@ la restricción es solo sobre nuestra pantalla.
   el recolector mediante un mutex —⚠️ es la parte más delicada, ver punto 6— y
   (b) enganchar el CAN del sniffer a `LiveState`.
 - **Despliegue en la tablet**: la v5.3.0 está construida y verificada, sin instalar.
-- Decisiones de diseño pendientes, propuestas tras consultar a un modelo externo y
-  filtrarlas: combustible a barra en vez de arco, testigos solo cuando ocurren,
-  avisos con icono sobre los umbrales, pantalla de viaje, indicador de eficiencia.
+- Decisiones de diseño pendientes: pantalla de viaje e indicador de eficiencia.
 - **El mapa embebido**: descartado por ahora. Exigiría abrir la red o una caché de
   teselas propia (`osmdroid`), y las de OpenStreetMap no se pueden usar desde una
   app sin contratar un proveedor. Hoy es un botón que abre Maps o Waze.
@@ -117,12 +127,11 @@ la restricción es solo sobre nuestra pantalla.
 - **El stub `android.tw.john.TWUtil` se compila pero NO debe entrar en el DEX.**
   Si entra, tapa la clase real de la ROM y el sniffer CAN deja de funcionar. El
   `build.sh` solo le pasa a `d8` las clases de la app. `make verify` lo comprueba.
-- **`gap` en flex no funciona en Chromium 74.** Engaña, porque los de grid sí
-  funcionan y la pantalla parece casi bien. Comprobado en el emulador, y ahora es
-  una comprobación automática que analiza regla por regla (no por líneas vecinas:
-  eso daba falsos positivos).
-- **Todo lo que haya en `assets/` viaja dentro del APK**, incluidas copias de
-  seguridad. Un `.bak` se coló una vez; `build.sh` ahora aborta si los encuentra.
+- **Solo se compilan los ficheros planos de `src/com/cassiopeia/vgatebridge/`** (ver
+  punto 2): una clase en una subcarpeta no entra en el APK y el error aparece en otra.
+- **Alumbrado encendido = noche.** Esta lógica se invirtió al migrar a nativo y el
+  cuadro salió en claro de noche, que es justo lo que deslumbra. Hay una comprobación
+  automática que vigila esa línea exacta.
 - **La firma tiene que ser la misma** que la de la versión instalada, o el update
   falla y hay que desinstalar (se perdería la MAC configurada del coche).
 - **El protocolo del decodificador (perfil 21, `C-QUATRE`) no se toca.** Es la única
@@ -146,19 +155,32 @@ la restricción es solo sobre nuestra pantalla.
 make                 # ayuda
 make test            # tests JVM de las clases puras (LiveState, ObdParse)
 make build           # compila y firma el APK
-make verify          # test + build + comprobaciones del APK y la pantalla ← antes de commitear
+make verify          # test + build + 92 comprobaciones ← antes de commitear
 make emulador        # emulador Android 10: crea/arranca/instala y comprueba que arranca
 make emulador-parar  # lo apaga
 ```
 
-**Verificación de comportamiento** (esto es lo que distingue "compila" de
-"funciona"): `~/.hermes/verify_logs/launcher-emulador/correspondencia.py` inyecta
-estados conocidos en la app, abre la pantalla en el emulador y **lee el DOM real del
-WebView** por el protocolo de depuración de Chrome, comparando campo a campo lo
-inyectado con lo pintado. Requiere el emulador arrancado.
+**Verificación de comportamiento** — lo que distingue «compila» de «funciona». La
+pantalla nativa no se puede interrogar como el DOM, y `uiautomator` además falla porque
+estas pantallas nunca se quedan quietas. Así que **cada instrumento anota lo que acaba
+de dibujar** al terminar su propio `onDraw`, y la Activity vuelca esa pizarra a
+`pintado.json`. La prueba inyecta estados conocidos, espera y compara lo DIBUJADO:
 
-**Cómo se inyectan datos de prueba** (para trabajar sin coche): se copia un JSON a
-la carpeta de la app y el puente lo devuelve tal cual en vez del estado real.
+```bash
+cd ~/.hermes/verify_logs/launcher-emulador && python3 correspondencia-nativa.py
+```
+
+La diferencia con leer el estado del coche es la que importa: el estado dice lo que
+**llegó**, la pizarra dice lo que se **pintó**. Si un instrumento dejara de refrescarse,
+el estado seguiría diciendo que todo va bien y esta prueba lo caza.
+
+**Cómo se inyectan datos de prueba** (para trabajar sin coche): se copia un JSON a la
+carpeta de la app y la pantalla lo usa en vez del estado del coche. Los relee cada
+150 ms, así que se puede cambiar con la pantalla abierta y ver el efecto al momento.
+
+El fichero inyectado describe el estado **completo**: lo que no aparece queda
+desconocido. Así se puede probar el caso que más importa —el dato que NO llega— que
+debe verse como una raya, nunca como un cero.
 
 ```bash
 adb push estado.json /sdcard/Android/data/com.cassiopeia.vgatebridge/files/test_state.json
@@ -170,12 +192,17 @@ la fuente de verdad; el repositorio público es solo escaparate.
 
 ## 7. Dónde está cada cosa
 
-- `app/src/com/cassiopeia/vgatebridge/LauncherActivity.java` — la pantalla
-- `app/src/com/cassiopeia/vgatebridge/WebBridge.java` — el puente con el JavaScript
+- `app/src/com/cassiopeia/vgatebridge/LauncherActivity.java` — la pantalla y su refresco
+- `app/src/com/cassiopeia/vgatebridge/InstrumentoView.java` — el instrumento
+- `app/src/com/cassiopeia/vgatebridge/BarraView.java` — combustible y autonomía
+- `app/src/com/cassiopeia/vgatebridge/TestigoView.java` — los avisos
+- `app/src/com/cassiopeia/vgatebridge/MusicaView.java` — el reproductor
+- `app/src/com/cassiopeia/vgatebridge/CajonView.java` — el cajón de aplicaciones
 - `app/src/com/cassiopeia/vgatebridge/LiveState.java` — el estado vivo del coche
+- `app/src/com/cassiopeia/vgatebridge/{Ajustes,Apps,MediaSesion,Paleta,Pizarra}.java`
+  — configuración, aplicaciones, reproductor, colores e instrumentación
 - `app/src/com/cassiopeia/vgatebridge/MediaListener.java` — llave para leer el reproductor
 - `app/src/com/cassiopeia/vgatebridge/CanSnifferService.java` — el CAN y el censo
-- `app/assets/launcher/` — la interfaz (HTML, CSS y JavaScript)
 - `app/tools/verificar.sh` y `app/tools/emulador.sh` — verificación y entorno
 - `app/tests/` — tests JVM de las clases puras
 - Planes y contexto: `~/.hermes/plans/` y el skill `car-telematics` (con las
