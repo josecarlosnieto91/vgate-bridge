@@ -271,10 +271,18 @@ los repositorios son la fuente de verdad; lo que viaja a GitHub es escaparate.
 
 **Falta:**
 
-- **La conexión viva.** El sondeo existe pero nunca ha hablado con el adaptador: eso
-  necesita el coche. Y el sniffer CAN todavía no escribe en `LiveState`.
-- **El despliegue en la tablet.** La versión actual está construida y verificada, sin
-  instalar.
+- **El sniffer CAN no escribe en `LiveState`.** Es lo que daría consumo, autonomía,
+  temperatura exterior, puertas y alumbrado en la pantalla sin pasar por el ELM y sin
+  competir con nadie. Se puede verificar con el coche en marcha.
+- **Los datos OBD en la pantalla son imposibles por la vía 1** (medido el 2026-09-22:
+  el recolector reutiliza el socket y el puente está ocupado siempre; ver
+  `HANDOFF-LAUNCHER.md`, «Consecuencia medida de la vía 1»). Queda la **vía 2**: el
+  recolector publica el último estado y la pantalla lo lee de un fichero.
+- **Fijar la pantalla como inicio.** La v5.6.0 (vc 44) está instalada desde el
+  2026-09-20 y la app funciona (el puente y el recolector hablan), pero la pantalla de
+  inicio **nunca se ha abierto**: no hay `pintado.json` ni `diagnosticos.txt`, así que
+  no se le ha concedido el acceso a notificaciones ni se ha fijado como inicio. Es a
+  mano y son dos toques.
 - Pantallas de sistema (batería, Bluetooth, WiFi, almacenamiento), configuración visual,
   búsqueda en el cajón, unidades y formato horario.
 

@@ -116,7 +116,12 @@ hay ninguna clase que abra una conexión: la interfaz es local de principio a fi
   nadie escribe ahí todavía desde el coche. **Hay una decisión tomada y una trampa ya
   explicada: leer el apartado «Cómo se conectarán los datos en vivo»** antes de tocar
   nada. Falta (a) esa conexión y (b) enganchar el CAN del sniffer a `LiveState`.
-- **Despliegue en la tablet**: la v5.5.0 está construida y verificada, sin instalar.
+- **Despliegue en la tablet**: **la v5.6.0 (vc 44) SÍ está instalada** (comprobado el
+  2026-09-22 leyendo la versión del sistema), pero **la pantalla de inicio nunca se ha
+  abierto en la tablet**: su carpeta solo tiene `logs/`, sin `pintado.json` ni
+  `diagnosticos.txt`. Falta la parte que solo puede hacer una persona: **fijarla como
+  pantalla de inicio** y **conceder el acceso a notificaciones**. Hasta eso, manda el
+  launcher de la ROM.
 - Pantallas de sistema (batería, Bluetooth, WiFi, almacenamiento) y configuración visual
   de `launcher.json`: búsqueda en el cajón, unidades y formato horario.
 - **El mapa embebido**: descartado por ahora. Exigiría abrir la red o una caché de
@@ -186,6 +191,26 @@ el coche:
 
 **Lo que NO se hace:** conectar el launcher por su cuenta al puerto 22000, abrir un
 segundo enlace Bluetooth, o cambiar el protocolo CAN o el perfil C-QUATRE.
+
+### Consecuencia medida de la vía 1 (2026-09-22, con el coche en marcha)
+
+**La vía 1, tal y como está, no entrega datos.** El recolector **reutiliza el socket
+TCP entre ciclos** (está escrito en su propio comentario: abrir socket por ciclo costaba
+6 s de `init` + 12 s de calentamiento), así que el puente se queda dentro de
+`bridgeLoop` de forma continua: `HAY_CLIENTE_TCP` está a `true` siempre y
+`preguntar()` devuelve `null` siempre. `Sondeo` espera 5 s, se queda sin datos y la
+pantalla enseña rayas, que es justo lo que se diseñó para el caso «el enlace es del
+recolector» — pero convertido en el caso normal.
+
+Evidencia: el diario del puente del 2026-09-22 tiene **un** `Cliente TCP conectado` por
+arranque de la app y **ningún** `Cliente desconectado, esperando siguiente...` en más de
+20 ciclos del recolector. No es un fallo a arreglar con un retoque: es la consecuencia de
+la regla «si hay cliente, la app no toca el enlace», que es la que protege la telemetría.
+
+Por eso, para datos OBD en la pantalla, **la vía que queda es la 2** (el recolector
+publica el último estado que ya lee y la pantalla lo lee del fichero: contención cero,
+sin tocar el puente). Los que llegan por el decodificador de la ROM (CAN) siguen siendo
+los baratos: no pasan por el ELM y no compiten con nadie.
 
 ## 6. Cómo se trabaja en esto
 
